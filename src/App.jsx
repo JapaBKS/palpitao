@@ -167,65 +167,89 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
 
+  // Estados para controlar a edição de um usuário existente
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editPin, setEditPin] = useState("");
+
   const add = () => {
     if (!name.trim()) return alert("Por favor, digite seu nome!");
     if (pin.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!");
 
-    // Adiciona o novo jogador com o PIN já salvo e pagamento falso
     onChange([...participants, { id: uid(), name: name.trim(), paid: false, pin: pin }]);
-    
-    // Limpa os campos
     setName("");
     setPin("");
     
+    if (!isAdmin) alert("Conta criada com sucesso! Vá na aba Palpites para fazer login e jogar.");
+  };
+
+  const startEdit = (p) => {
+    // Se não for o Admin, pede a senha atual para provar que é a própria pessoa
     if (!isAdmin) {
-      alert("Conta criada com sucesso! Vá na aba Palpites para fazer login e jogar.");
+      const authPin = window.prompt(`🔒 Digite a senha atual de ${p.name} para liberar a edição:`);
+      if (authPin === null) return; // Se a pessoa clicar em "Cancelar"
+      if (authPin !== p.pin) return alert("❌ Senha incorreta!");
     }
+    
+    setEditingId(p.id);
+    setEditName(p.name);
+    setEditPin(p.pin);
+  };
+
+  const saveEdit = (id) => {
+    if (!editName.trim()) return alert("O nome não pode ficar vazio!");
+    if (editPin.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!");
+
+    // Atualiza a lista com os novos dados
+    const updated = participants.map(p => p.id === id ? { ...p, name: editName.trim(), pin: editPin } : p);
+    onChange(updated);
+    setEditingId(null);
   };
 
   const togglePaid = (id) => onChange(participants.map((p) => (p.id === id ? { ...p, paid: !p.paid } : p)));
 
   return (
     <div>
-      {/* Formulário de Cadastro Aberto para Todos */}
+      {/* Formulário de Cadastro */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <h3 style={{ marginBottom: 12, color: C.text, fontSize: 16 }}>
           {isAdmin ? "⚙️ Adicionar Jogador (Admin)" : "👋 Novo por aqui? Cadastre-se"}
         </h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input 
-            value={name} 
-            onChange={(e) => setName(e.target.value)} 
-            placeholder="Seu Nome" 
-            style={INP({ flex: 1, minWidth: 140 })} 
-          />
-          <input 
-            type="password" 
-            value={pin} 
-            onChange={(e) => setPin(e.target.value)} 
-            placeholder="Senha (mín. 4)" 
-            style={INP({ width: 130, textAlign: "center", letterSpacing: 2 })} 
-          />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu Nome" style={INP({ flex: 1, minWidth: 140 })} />
+          <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Senha (mín. 4)" style={INP({ width: 130, textAlign: "center", letterSpacing: 2 })} />
           <button onClick={add} style={BTN()}>{isAdmin ? "+ Adicionar" : "Me Cadastrar"}</button>
         </div>
-        {!isAdmin && (
-          <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
-            Crie sua conta e senha para registrar seus palpites com segurança. Apenas o administrador aprova o status do pagamento.
-          </p>
-        )}
+        {!isAdmin && <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Crie sua conta e senha para registrar seus palpites com segurança. Apenas o administrador aprova o status do pagamento.</p>}
       </div>
 
       {/* Lista de Participantes */}
       {participants.map((p) => (
-        <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-          <span style={{ flex: 1, fontWeight: 700 }}>{p.name}</span>
-          <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Pago" : "❌ Pendente"}</span>
+        <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
           
-          {/* Botões restritos ao Admin */}
-          {isAdmin && (
+          {/* Se este usuário for o que está sendo editado, mostra os inputs */}
+          {editingId === p.id ? (
             <>
-              <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "4px 10px" })}>Mudar Pix</button>
-              <button onClick={() => { if(window.confirm(`Tem certeza que deseja excluir ${p.name}?`)) onDelete(p.id) }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 22 }}>×</button>
+              <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ flex: 1, minWidth: 120, padding: "6px 10px" })} />
+              <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="Nova senha" style={INP({ width: 100, padding: "6px 10px", textAlign: "center" })} />
+              <button onClick={() => saveEdit(p.id)} style={BTN({ padding: "6px 12px", fontSize: 12 })}>Salvar</button>
+              <button onClick={() => setEditingId(null)} style={GHOST_BTN({ padding: "6px 10px" })}>Cancelar</button>
+            </>
+          ) : (
+            <>
+              <span style={{ flex: 1, fontWeight: 700 }}>{p.name}</span>
+              <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Pago" : "❌ Pendente"}</span>
+              
+              {/* Botão de editar liberado para qualquer um tentar (exige senha depois) */}
+              <button onClick={() => startEdit(p)} style={GHOST_BTN({ padding: "4px 10px" })}>✏️ Editar</button>
+              
+              {/* Botões restritos ao Admin */}
+              {isAdmin && (
+                <>
+                  <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "4px 10px" })}>Mudar Pix</button>
+                  <button onClick={() => { if(window.confirm(`Tem certeza que deseja excluir ${p.name}?`)) onDelete(p.id) }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 22 }}>×</button>
+                </>
+              )}
             </>
           )}
         </div>
