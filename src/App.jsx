@@ -270,6 +270,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
                     <ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} />
                     <span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right" }}>{m.teamB}</span>
                     <button onClick={() => saveResult(m.id)} style={BTN({ padding: "6px 12px", fontSize: 12 })}>✓ Salvar</button>
+                    <button onClick={() => clearResult(m.id)} style={GHOST_BTN({ color: C.red, borderColor: `${C.red}66` })}>Limpar</button>
                     <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 20 }}>×</button>
                   </>
                 ) : (
@@ -300,8 +301,6 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
   const activePid = participants.find((p) => p.id === selPid)?.id || participants[0]?.id || "";
   const activeUser = participants.find((p) => p.id === activePid);
-
-  useEffect(() => { setPinInput(""); }, [activePid]);
 
   const setPred = (matchId, side, val) => {
     if (!activePid) return;
@@ -334,7 +333,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
     <div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         {participants.map((p) => (
-          <button key={p.id} onClick={() => setSelPid(p.id)} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 20, padding: "6px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>
+          <button key={p.id} onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 20, padding: "6px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>
             {p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}
           </button>
         ))}
