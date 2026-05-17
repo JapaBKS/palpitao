@@ -163,7 +163,7 @@ function TabPlacar({ participants, matches, preds }) {
   );
 }
 
-function TabParticipantes({ participants, onChange, isAdmin }) {
+function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   const [name, setName] = useState("");
 
   const add = () => {
@@ -173,7 +173,6 @@ function TabParticipantes({ participants, onChange, isAdmin }) {
   };
 
   const togglePaid = (id) => onChange(participants.map((p) => (p.id === id ? { ...p, paid: !p.paid } : p)));
-  const remove = (id) => onChange(participants.filter((p) => p.id !== id));
 
   return (
     <div>
@@ -193,7 +192,7 @@ function TabParticipantes({ participants, onChange, isAdmin }) {
           {isAdmin && (
             <>
               <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "4px 10px" })}>Mudar Pix</button>
-              <button onClick={() => remove(p.id)} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 22 }}>×</button>
+              <button onClick={() => { if(window.confirm(`Tem certeza que deseja excluir ${p.name}?`)) onDelete(p.id) }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 22 }}>×</button>
             </>
           )}
         </div>
@@ -476,6 +475,13 @@ export default function BolaoApp() {
     await supabase.from('participantes').upsert(d);
   };
 
+  const removeP = async (id) => {
+    // 1. Tira da tela na hora
+    setParticipants(participants.filter(p => p.id !== id));
+    // 2. Manda o Supabase apagar no banco
+    await supabase.from('participantes').delete().eq('id', id);
+  };
+
   const sm = async (d) => {
     setMatches(d);
     const jogosFormatados = d.map(j => ({
@@ -557,7 +563,7 @@ export default function BolaoApp() {
 
       <div style={{ maxWidth: 820, margin: "0 auto", padding: "20px 16px" }}>
         {tab === "placar" && <TabPlacar participants={participants} matches={matches} preds={preds} />}
-        {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} isAdmin={isAdmin} />}
+        {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
         {tab === "jogos" && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
         {tab === "palpites" && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} />}
         {tab === "visao" && <TabVisao participants={participants} matches={matches} preds={preds} />}
