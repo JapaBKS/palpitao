@@ -165,30 +165,63 @@ function TabPlacar({ participants, matches, preds }) {
 
 function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   const [name, setName] = useState("");
+  const [pin, setPin] = useState("");
 
   const add = () => {
-    if (!name.trim()) return;
-    onChange([...participants, { id: uid(), name: name.trim(), paid: false, pin: null }]);
+    if (!name.trim()) return alert("Por favor, digite seu nome!");
+    if (pin.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!");
+
+    // Adiciona o novo jogador com o PIN já salvo e pagamento falso
+    onChange([...participants, { id: uid(), name: name.trim(), paid: false, pin: pin }]);
+    
+    // Limpa os campos
     setName("");
+    setPin("");
+    
+    if (!isAdmin) {
+      alert("Conta criada com sucesso! Vá na aba Palpites para fazer login e jogar.");
+    }
   };
 
   const togglePaid = (id) => onChange(participants.map((p) => (p.id === id ? { ...p, paid: !p.paid } : p)));
 
   return (
     <div>
-      {isAdmin && (
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} placeholder="Nome do participante..." style={INP()} />
-          <button onClick={add} style={BTN()}>+ Adicionar</button>
+      {/* Formulário de Cadastro Aberto para Todos */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+        <h3 style={{ marginBottom: 12, color: C.text, fontSize: 16 }}>
+          {isAdmin ? "⚙️ Adicionar Jogador (Admin)" : "👋 Novo por aqui? Cadastre-se"}
+        </h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input 
+            value={name} 
+            onChange={(e) => setName(e.target.value)} 
+            placeholder="Seu Nome" 
+            style={INP({ flex: 1, minWidth: 140 })} 
+          />
+          <input 
+            type="password" 
+            value={pin} 
+            onChange={(e) => setPin(e.target.value)} 
+            placeholder="Senha (mín. 4)" 
+            style={INP({ width: 130, textAlign: "center", letterSpacing: 2 })} 
+          />
+          <button onClick={add} style={BTN()}>{isAdmin ? "+ Adicionar" : "Me Cadastrar"}</button>
         </div>
-      )}
+        {!isAdmin && (
+          <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
+            Crie sua conta e senha para registrar seus palpites com segurança. Apenas o administrador aprova o status do pagamento.
+          </p>
+        )}
+      </div>
 
-      {!isAdmin && <div style={{ marginBottom: 16, color: C.gold, fontSize: 13 }}>⚠️ Apenas o administrador pode adicionar ou remover jogadores.</div>}
-
+      {/* Lista de Participantes */}
       {participants.map((p) => (
         <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
           <span style={{ flex: 1, fontWeight: 700 }}>{p.name}</span>
           <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Pago" : "❌ Pendente"}</span>
+          
+          {/* Botões restritos ao Admin */}
           {isAdmin && (
             <>
               <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "4px 10px" })}>Mudar Pix</button>
