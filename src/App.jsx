@@ -6,6 +6,17 @@ const supabaseUrl = 'https://sfpdbotvobdzuckpfcbv.supabase.co';
 const supabaseKey = 'sb_publishable_FQaWYA6nqB1Fz9IS2O4klg_Eu1Q2mU4';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+/* ── Mobile hook ── */
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 600);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 600);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
 /* ── Utils ── */
 let _n = 0;
 const uid = () => `${Date.now()}_${++_n}`;
@@ -74,17 +85,19 @@ const C = {
 /* ── Shared styles ── */
 const INP = (extra = {}) => ({
   background: C.input, border: `1px solid ${C.border}`, borderRadius: 8,
-  color: C.text, padding: "10px 12px", fontSize: 14, fontFamily: "inherit",
-  outline: "none", width: "100%", ...extra,
+  color: C.text, padding: "10px 12px", fontSize: 16, fontFamily: "inherit",
+  outline: "none", width: "100%", boxSizing: "border-box", ...extra,
 });
 const BTN = (extra = {}) => ({
   background: C.greenDim, border: "none", borderRadius: 8, color: "#fff",
   padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer",
-  fontFamily: "inherit", whiteSpace: "nowrap", ...extra,
+  fontFamily: "inherit", whiteSpace: "nowrap", minHeight: 44, display: "inline-flex",
+  alignItems: "center", justifyContent: "center", ...extra,
 });
 const GHOST_BTN = (extra = {}) => ({
   background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted,
-  padding: "6px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", ...extra,
+  padding: "6px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+  minHeight: 36, display: "inline-flex", alignItems: "center", justifyContent: "center", ...extra,
 });
 
 const ptsColor = { 10: C.gold, 7: C.green, 5: C.blue, 2: C.bronze, 0: C.muted };
@@ -112,7 +125,7 @@ function ScoreIn({ value, onChange, disabled }) {
   if (disabled) {
     return <span style={{ width: 52, textAlign: "center", padding: "8px 4px", background: C.surface, borderRadius: 8, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700 }}>{value !== "" ? value : "-"}</span>;
   }
-  return <input type="number" min="0" max="99" value={value} onChange={(e) => onChange(e.target.value)} style={INP({ width: 52, textAlign: "center", padding: "8px 4px" })} />;
+  return <input type="number" min="0" max="99" value={value} onChange={(e) => onChange(e.target.value)} style={INP({ width: 52, textAlign: "center", padding: "8px 4px", fontSize: 16 })} />;
 }
 
 function Divider({ label }) {
@@ -121,6 +134,7 @@ function Divider({ label }) {
 
 /* ── Tabs ── */
 function TabPlacar({ participants, matches, preds }) {
+  const isMobile = useIsMobile();
   const ranked = getRanked(participants, matches, preds);
   const total = participants.length * 100;
   const played = matches.filter((m) => m.result).length;
@@ -129,32 +143,51 @@ function TabPlacar({ participants, matches, preds }) {
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: isMobile ? 8 : 12, marginBottom: 20 }}>
         {prizes.map((pr, i) => (
-          <div key={i} style={{ background: C.card, border: `1px solid ${pr.color}44`, borderRadius: 12, padding: "14px 10px", textAlign: "center" }}>
-            <div style={{ fontSize: 26, marginBottom: 4 }}>{medals[i]}</div>
-            <div style={{ fontSize: 11, color: C.muted }}>{i === 0 ? "1º" : i === 1 ? "2º" : "3º"} ({pr.pct})</div>
-            <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, letterSpacing: 1, color: pr.color, marginTop: 4 }}>R$ {pr.val.toLocaleString("pt-BR")}</div>
+          <div key={i} style={{ background: C.card, border: `1px solid ${pr.color}44`, borderRadius: 12, padding: isMobile ? "10px 6px" : "14px 10px", textAlign: "center" }}>
+            <div style={{ fontSize: isMobile ? 20 : 26, marginBottom: 4 }}>{medals[i]}</div>
+            <div style={{ fontSize: isMobile ? 10 : 11, color: C.muted }}>{i === 0 ? "1º" : i === 1 ? "2º" : "3º"} ({pr.pct})</div>
+            <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 16 : 22, letterSpacing: 1, color: pr.color, marginTop: 4 }}>R$ {pr.val.toLocaleString("pt-BR")}</div>
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <span>⚽ {played}/{matches.length} jogos com resultado</span><span>💰 Total: R$ {total.toLocaleString("pt-BR")}</span><span>👥 {participants.length} jogadores</span>
+      <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <span>⚽ {played}/{matches.length} com resultado</span><span>💰 R$ {total.toLocaleString("pt-BR")}</span><span>👥 {participants.length}</span>
       </div>
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante." />}
       {ranked.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+          {/* Header row */}
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "44px 1fr 56px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 10, color: C.muted, display: "flex", alignItems: "center" }}>#</span>
+            <span style={{ fontSize: 10, color: C.muted, display: "flex", alignItems: "center" }}>Nome</span>
+            <span style={{ fontSize: 10, color: C.muted, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>Pts</span>
+            {!isMobile && <>
+              <span style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>10</span>
+              <span style={{ fontSize: 10, color: C.green, textAlign: "center" }}>7</span>
+              <span style={{ fontSize: 10, color: C.blue, textAlign: "center" }}>5</span>
+            </>}
+          </div>
           {ranked.map((p, i) => (
-            <div key={p.id} style={{ display: "grid", gridTemplateColumns: "44px 1fr 64px 40px 40px 40px", gap: 8, padding: "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : 'none', background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent" }}>
-              <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? 20 : 14, color: i >= 3 ? C.muted : undefined }}>{i < 3 ? medals[i] : `${i + 1}º`}</span>
-              <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                {!p.paid && <span style={{ fontSize: 10, background: `${C.red}22`, color: C.red, padding: "1px 6px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix ⚠️</span>}
+            <div key={p.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "44px 1fr 56px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : 'none', background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent" }}>
+              <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? (isMobile ? 17 : 20) : 13, color: i >= 3 ? C.muted : undefined }}>{i < 3 ? medals[i] : `${i + 1}º`}</span>
+              <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14 }}>{p.name}</span>
+                {!p.paid && <span style={{ fontSize: 9, background: `${C.red}22`, color: C.red, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix⚠️</span>}
+                {isMobile && (
+                  <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
+                    {p.c10 > 0 && <span style={{ fontSize: 10, color: C.gold }}>×{p.c10}</span>}
+                    {p.c7 > 0 && <span style={{ fontSize: 10, color: C.green }}>×{p.c7}</span>}
+                  </span>
+                )}
               </span>
-              <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 26, display: "flex", alignItems: "center", justifyContent: "flex-end", color: i === 0 ? C.gold : i === 1 ? C.silver : i === 2 ? C.bronze : C.text }}>{p.total}</span>
-              <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.gold, fontWeight: 900 }}>{p.c10 || "—"}</span>
-              <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontWeight: 900 }}>{p.c7 || "—"}</span>
-              <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, fontWeight: 900 }}>{p.c5 || "—"}</span>
+              <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, display: "flex", alignItems: "center", justifyContent: "flex-end", color: i === 0 ? C.gold : i === 1 ? C.silver : i === 2 ? C.bronze : C.text }}>{p.total}</span>
+              {!isMobile && <>
+                <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.gold, fontWeight: 900 }}>{p.c10 || "—"}</span>
+                <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontWeight: 900 }}>{p.c7 || "—"}</span>
+                <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, fontWeight: 900 }}>{p.c5 || "—"}</span>
+              </>}
             </div>
           ))}
         </div>
@@ -225,32 +258,29 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
 
       {/* Lista de Participantes */}
       {participants.map((p) => (
-        <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
+        <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
           
-          {/* Se este usuário for o que está sendo editado, mostra os inputs */}
           {editingId === p.id ? (
-            <>
-              <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ flex: 1, minWidth: 120, padding: "6px 10px" })} />
-              <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="Nova senha" style={INP({ width: 100, padding: "6px 10px", textAlign: "center" })} />
-              <button onClick={() => saveEdit(p.id)} style={BTN({ padding: "6px 12px", fontSize: 12 })}>Salvar</button>
-              <button onClick={() => setEditingId(null)} style={GHOST_BTN({ padding: "6px 10px" })}>Cancelar</button>
-            </>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ padding: "8px 10px" })} />
+              <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="Nova senha" style={INP({ padding: "8px 10px", textAlign: "center" })} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => saveEdit(p.id)} style={BTN({ flex: 1 })}>Salvar</button>
+                <button onClick={() => setEditingId(null)} style={GHOST_BTN({ flex: 1 })}>Cancelar</button>
+              </div>
+            </div>
           ) : (
-            <>
-              <span style={{ flex: 1, fontWeight: 700 }}>{p.name}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ flex: 1, fontWeight: 700, minWidth: 80 }}>{p.name}</span>
               <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Pago" : "❌ Pendente"}</span>
-              
-              {/* Botão de editar liberado para qualquer um tentar (exige senha depois) */}
-              <button onClick={() => startEdit(p)} style={GHOST_BTN({ padding: "4px 10px" })}>✏️ Editar</button>
-              
-              {/* Botões restritos ao Admin */}
+              <button onClick={() => startEdit(p)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>✏️ Editar</button>
               {isAdmin && (
                 <>
-                  <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "4px 10px" })}>Mudar Pix</button>
-                  <button onClick={() => { if(window.confirm(`Tem certeza que deseja excluir ${p.name}?`)) onDelete(p.id) }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 22 }}>×</button>
+                  <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>Mudar Pix</button>
+                  <button onClick={() => { if(window.confirm(`Tem certeza que deseja excluir ${p.name}?`)) onDelete(p.id) }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 24, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                 </>
               )}
-            </>
+            </div>
           )}
         </div>
       ))}
@@ -319,16 +349,20 @@ function TabJogos({ matches, onChange, isAdmin }) {
               {m.date && <span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date} {isLocked(m.date) ? " (Encerrado)" : ""}</span>}
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {editId === m.id ? (
-                  <>
-                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{m.teamA}</span>
-                    <ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} />
-                    <span style={{ color: C.muted }}>×</span>
-                    <ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} />
-                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right" }}>{m.teamB}</span>
-                    <button onClick={() => saveResult(m.id)} style={BTN({ padding: "6px 12px", fontSize: 12 })}>✓ Salvar</button>
-                    <button onClick={() => clearResult(m.id)} style={GHOST_BTN({ color: C.red, borderColor: `${C.red}66` })}>Limpar</button>
-                    <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 20 }}>×</button>
-                  </>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{m.teamA}</span>
+                      <ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} />
+                      <span style={{ color: C.muted }}>×</span>
+                      <ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} />
+                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right" }}>{m.teamB}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => saveResult(m.id)} style={BTN({ flex: 1, fontSize: 13 })}>✓ Salvar</button>
+                      <button onClick={() => clearResult(m.id)} style={GHOST_BTN({ flex: 1, color: C.red, borderColor: `${C.red}66` })}>Limpar</button>
+                      <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 20, minWidth: 36 }}>×</button>
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{m.teamA}</span>
@@ -352,6 +386,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
 }
 
 function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked }) {
+  const isMobile = useIsMobile();
   const [selPid, setSelPid] = useState("");
   const [pinInput, setPinInput] = useState("");
 
@@ -387,12 +422,26 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        {participants.map((p) => (
-          <button key={p.id} onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 20, padding: "6px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>
-            {p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}
-          </button>
-        ))}
+      <div style={{ marginBottom: 16 }}>
+        {isMobile ? (
+          <select
+            value={activePid}
+            onChange={e => { setSelPid(e.target.value); setPinInput(""); }}
+            style={INP({ fontSize: 15, fontWeight: 700 })}
+          >
+            {participants.map((p) => (
+              <option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>
+            ))}
+          </select>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {participants.map((p) => (
+              <button key={p.id} onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 20, padding: "6px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>
+                {p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {!isUnlocked ? (
@@ -490,6 +539,7 @@ function TabVisao({ participants, matches, preds }) {
 
 /* ── App Shell Principal ── */
 export default function BolaoApp() {
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState("placar");
   const [participants, setParticipants] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -595,30 +645,35 @@ export default function BolaoApp() {
         input, select, button, textarea { font-family: 'Nunito', system-ui, sans-serif; }
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
+        select { -webkit-appearance: none; appearance: none; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
       `}</style>
 
-      <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">
-          ⚽ BOLÃO DA COPA {isAdmin && "<ADMIN>"}
+      {/* Header */}
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 20 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">
+            ⚽ BOLÃO DA COPA {isAdmin && "<ADMIN>"}
+          </div>
+          <div style={{ marginLeft: "auto" }}>
+            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "3px 10px", fontWeight: 700, fontSize: isMobile ? 11 : 13 }}>
+              💰 R$ {(participants.length * 100).toLocaleString("pt-BR")}
+            </span>
+          </div>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "3px 12px", fontWeight: 700, fontSize: 13 }}>
-            Prêmio Total: R$ {(participants.length * 100).toLocaleString("pt-BR")}
-          </span>
+
+        {/* Tabs nav */}
+        <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
+          {TABS.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 11 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>
+              {isMobile ? t.label.split(" ")[0] : t.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div style={{ display: "flex", background: C.surface, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>
-        {TABS.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: 13, fontFamily: "inherit", transition: "color .15s" }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: "20px 16px" }}>
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}>
         {tab === "placar" && <TabPlacar participants={participants} matches={matches} preds={preds} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
         {tab === "jogos" && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
