@@ -72,7 +72,7 @@ function isLocked(dateStr) {
   }
 }
 
-const PHASES = ["Fase de Grupos", "32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
+const PHASES = ["Fase de Grupos", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
 
 /* ── Design tokens ── */
 const C = {
@@ -165,6 +165,65 @@ function ScoringLegend() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ── Filter bar ── */
+const MATA_MATA = ["Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
+
+function todayDDMM() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}`;
+}
+
+function applyFilter(matches, filter) {
+  if (filter === "hoje")   return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
+  if (filter === "grupos") return matches.filter(m => m.phase === "Fase de Grupos");
+  if (filter === "mata")   return matches.filter(m => MATA_MATA.includes(m.phase));
+  return matches; // "todos"
+}
+
+const FILTERS = [
+  { id: "todos",  label: "Ver Todos" },
+  { id: "hoje",   label: "Hoje"      },
+  { id: "grupos", label: "Grupos"    },
+  { id: "mata",   label: "Mata-Mata" },
+];
+
+function FilterBar({ active, onChange, matches }) {
+  const counts = {
+    todos:  matches.length,
+    hoje:   applyFilter(matches, "hoje").length,
+    grupos: applyFilter(matches, "grupos").length,
+    mata:   applyFilter(matches, "mata").length,
+  };
+  return (
+    <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 2 }}>
+      {FILTERS.map(f => {
+        const isActive = active === f.id;
+        const n = counts[f.id];
+        return (
+          <button
+            key={f.id}
+            onClick={() => onChange(f.id)}
+            style={{
+              border: `1px solid ${isActive ? C.green : C.border}`,
+              background: isActive ? `${C.green}1a` : C.card,
+              color: isActive ? C.green : C.muted,
+              borderRadius: 20, padding: "6px 14px", cursor: "pointer",
+              fontWeight: 700, fontSize: 12, fontFamily: "inherit",
+              whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5,
+              transition: "all .15s", flexShrink: 0,
+            }}
+          >
+            {f.label}
+            <span style={{ fontSize: 10, background: isActive ? `${C.green}33` : C.surface, borderRadius: 10, padding: "1px 6px", color: isActive ? C.green : C.muted }}>{n}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -333,6 +392,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
   const [phase, setPhase] = useState("Fase de Grupos");
   const [editId, setEditId] = useState(null);
   const [tempR, setTempR] = useState({ a: "", b: "" });
+  const [filter, setFilter] = useState("todos");
 
   const add = () => {
     if (!teamA.trim() || !teamB.trim()) return;
@@ -358,7 +418,8 @@ function TabJogos({ matches, onChange, isAdmin }) {
     setEditId(null);
   };
 
-  const grouped = PHASES.map((ph) => ({ ph, ms: matches.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
+  const filtered = applyFilter(matches, filter);
+  const grouped = PHASES.map((ph) => ({ ph, ms: filtered.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
 
   return (
     <div>
@@ -379,6 +440,9 @@ function TabJogos({ matches, onChange, isAdmin }) {
 
       {!isAdmin && <div style={{ marginBottom: 16, color: C.gold, fontSize: 13 }}>⚠️ Apenas o administrador insere os placares oficiais.</div>}
 
+      <FilterBar active={filter} onChange={setFilter} matches={matches} />
+
+      {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo neste filtro." />}
       {grouped.map(({ ph, ms }) => (
         <div key={ph} style={{ marginBottom: 24 }}>
           <Divider label={`${ph} (${ms.length})`} />
@@ -427,6 +491,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   const isMobile = useIsMobile();
   const [selPid, setSelPid] = useState("");
   const [pinInput, setPinInput] = useState("");
+  const [filter, setFilter] = useState("todos");
 
   const activePid = participants.find((p) => p.id === selPid)?.id || participants[0]?.id || "";
   const activeUser = participants.find((p) => p.id === activePid);
@@ -456,7 +521,8 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
   const stats = activePid ? getStats(activePid, matches, preds) : null;
   const isUnlocked = sessionUnlocked[activePid];
-  const grouped = PHASES.map((ph) => ({ ph, ms: matches.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
+  const filteredMatches = applyFilter(matches, filter);
+  const grouped = PHASES.map((ph) => ({ ph, ms: filteredMatches.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
 
   return (
     <div>
@@ -506,6 +572,9 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
           <ScoringLegend />
 
+          <FilterBar active={filter} onChange={setFilter} matches={matches} />
+
+          {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo neste filtro." />}
           {grouped.map(({ ph, ms }) => (
             <div key={ph} style={{ marginBottom: 24 }}>
               <Divider label={ph} />
