@@ -72,7 +72,7 @@ function isLocked(dateStr) {
   }
 }
 
-const PHASES = ["Fase de Grupos", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
+const PHASES = ["Fase de Grupos", "32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
 
 /* ── Design tokens ── */
 const C = {
