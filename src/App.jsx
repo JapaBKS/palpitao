@@ -172,58 +172,115 @@ function ScoringLegend() {
 /* ── Filter bar ── */
 const MATA_MATA = ["Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
 
+const GRUPOS = {
+  A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
+  B: ["Canadá", "Bósnia", "Catar", "Suíça"],
+  C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
+  D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
+  E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
+  F: ["Holanda", "Japão", "Suécia", "Tunísia"],
+  G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
+  H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
+  I: ["França", "Senegal", "Noruega", "Repescagem Intercontinental 2"],
+  J: ["Argentina", "Argélia", "Áustria", "Jordânia"],
+  K: ["Portugal", "RD Congo", "Uzbequistão", "Colômbia"],
+  L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
+};
+
+// Reverse lookup: lowercase team name → group letter
+const TEAM_TO_GROUP = {};
+Object.entries(GRUPOS).forEach(([letter, teams]) => {
+  teams.forEach(team => { TEAM_TO_GROUP[team.toLowerCase()] = letter; });
+});
+
+function getMatchGroup(match) {
+  if (match.phase !== "Fase de Grupos") return null;
+  const a = (match.teamA || "").toLowerCase();
+  const b = (match.teamB || "").toLowerCase();
+  // Exact match first
+  if (TEAM_TO_GROUP[a]) return TEAM_TO_GROUP[a];
+  if (TEAM_TO_GROUP[b]) return TEAM_TO_GROUP[b];
+  // Partial match fallback (handles slight spelling variations)
+  for (const [key, letter] of Object.entries(TEAM_TO_GROUP)) {
+    if (a.includes(key) || key.includes(a) || b.includes(key) || key.includes(b)) return letter;
+  }
+  return null;
+}
+
 function todayDDMM() {
   const d = new Date();
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}`;
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
 }
 
 function applyFilter(matches, filter) {
-  if (filter === "hoje")   return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
-  if (filter === "grupos") return matches.filter(m => m.phase === "Fase de Grupos");
-  if (filter === "mata")   return matches.filter(m => MATA_MATA.includes(m.phase));
+  if (filter === "hoje")              return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
+  if (filter === "grupos")            return matches.filter(m => m.phase === "Fase de Grupos");
+  if (filter === "mata")              return matches.filter(m => MATA_MATA.includes(m.phase));
+  if (filter.startsWith("grupo-"))    return matches.filter(m => getMatchGroup(m) === filter.split("-")[1]);
   return matches; // "todos"
 }
 
-const FILTERS = [
+const FILTERS_MAIN = [
   { id: "todos",  label: "Ver Todos" },
   { id: "hoje",   label: "Hoje"      },
   { id: "grupos", label: "Grupos"    },
   { id: "mata",   label: "Mata-Mata" },
 ];
 
+const PILL = (isActive, color = C.green) => ({
+  border: `1px solid ${isActive ? color : C.border}`,
+  background: isActive ? `${color}1a` : C.card,
+  color: isActive ? color : C.muted,
+  borderRadius: 20, padding: "6px 12px", cursor: "pointer",
+  fontWeight: 700, fontSize: 12, fontFamily: "inherit",
+  whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4,
+  transition: "all .15s", flexShrink: 0,
+});
+
 function FilterBar({ active, onChange, matches }) {
-  const counts = {
-    todos:  matches.length,
-    hoje:   applyFilter(matches, "hoje").length,
-    grupos: applyFilter(matches, "grupos").length,
-    mata:   applyFilter(matches, "mata").length,
-  };
+  const isGrupoActive = active === "grupos" || active.startsWith("grupo-");
+
+  const count = (f) => applyFilter(matches, f).length;
+
   return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 16, overflowX: "auto", paddingBottom: 2 }}>
-      {FILTERS.map(f => {
-        const isActive = active === f.id;
-        const n = counts[f.id];
-        return (
-          <button
-            key={f.id}
-            onClick={() => onChange(f.id)}
-            style={{
-              border: `1px solid ${isActive ? C.green : C.border}`,
-              background: isActive ? `${C.green}1a` : C.card,
-              color: isActive ? C.green : C.muted,
-              borderRadius: 20, padding: "6px 14px", cursor: "pointer",
-              fontWeight: 700, fontSize: 12, fontFamily: "inherit",
-              whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5,
-              transition: "all .15s", flexShrink: 0,
-            }}
-          >
-            {f.label}
-            <span style={{ fontSize: 10, background: isActive ? `${C.green}33` : C.surface, borderRadius: 10, padding: "1px 6px", color: isActive ? C.green : C.muted }}>{n}</span>
+    <div style={{ marginBottom: 16 }}>
+      {/* Row 1 — main filters */}
+      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, scrollbarWidth: "none" }}>
+        {FILTERS_MAIN.map(f => {
+          const isActive = f.id === "grupos" ? isGrupoActive : active === f.id;
+          const n = f.id === "grupos"
+            ? count("grupos")
+            : count(f.id);
+          return (
+            <button key={f.id} onClick={() => onChange(f.id)} style={PILL(isActive)}>
+              {f.label}
+              <span style={{ fontSize: 10, background: isActive ? `${C.green}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Row 2 — group sub-filters, only when Grupos is active */}
+      {isGrupoActive && (
+        <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingTop: 8, paddingBottom: 2, scrollbarWidth: "none" }}>
+          {/* "Todos os grupos" pill */}
+          <button onClick={() => onChange("grupos")} style={PILL(active === "grupos", C.blue)}>
+            Todos
+            <span style={{ fontSize: 10, background: active === "grupos" ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count("grupos")}</span>
           </button>
-        );
-      })}
+          {Object.keys(GRUPOS).map(letter => {
+            const filterId = `grupo-${letter}`;
+            const isActive = active === filterId;
+            const n = count(filterId);
+            return (
+              <button key={letter} onClick={() => onChange(filterId)} style={PILL(isActive, C.blue)}>
+                {letter}
+                <span style={{ fontSize: 10, background: isActive ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
