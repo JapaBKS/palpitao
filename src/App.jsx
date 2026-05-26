@@ -132,6 +132,43 @@ function Divider({ label }) {
   return <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 17, letterSpacing: 1, color: C.muted, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 10 }}>{label}</div>;
 }
 
+const RULES = [
+  { pts: 10, icon: "🎯", label: "Placar Exato",           desc: "Acertou o resultado completo"                       },
+  { pts:  7, icon: "⭐", label: "Tendência + Gols",       desc: "Acertou o vencedor e os gols de um time"           },
+  { pts:  5, icon: "✅", label: "Tendência Simples",      desc: "Acertou só o vencedor (ou empate)"                 },
+  { pts:  2, icon: "〰️", label: "Gols de um time",        desc: "Errou o vencedor, mas acertou gols de um time"     },
+  { pts:  0, icon: "❌", label: "Erro Total",             desc: "Não acertou nada"                                  },
+];
+
+function ScoringLegend() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+      >
+        <span>📖 Como funciona a pontuação?</span>
+        <span style={{ fontSize: 10, transition: "transform .2s", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
+          {RULES.map((r) => (
+            <div key={r.pts} style={{ display: "grid", gridTemplateColumns: "36px 36px 1fr", alignItems: "center", gap: 8, padding: "10px 14px", borderTop: r.pts < 10 ? `1px solid ${C.border}` : "none" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, height: 24, background: ptsBg[r.pts], color: ptsColor[r.pts], border: `1px solid ${ptsColor[r.pts]}`, borderRadius: 6, fontWeight: 900, fontSize: 13 }}>{r.pts}</span>
+              <span style={{ fontSize: 16, textAlign: "center" }}>{r.icon}</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: ptsColor[r.pts] }}>{r.label}</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{r.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Tabs ── */
 function TabPlacar({ participants, matches, preds }) {
   const isMobile = useIsMobile();
@@ -156,6 +193,7 @@ function TabPlacar({ participants, matches, preds }) {
         <span>⚽ {played}/{matches.length} com resultado</span><span>💰 R$ {total.toLocaleString("pt-BR")}</span><span>👥 {participants.length}</span>
       </div>
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante." />}
+      <ScoringLegend />
       {ranked.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
           {/* Header row */}
@@ -465,6 +503,8 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
               <span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>10 × {stats.c10}</span>
             </div>
           )}
+
+          <ScoringLegend />
 
           {grouped.map(({ ph, ms }) => (
             <div key={ph} style={{ marginBottom: 24 }}>
