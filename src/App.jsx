@@ -176,7 +176,7 @@ function Toast({ message, onDone }) {
   );
 }
 
-/* ── Stats Modal ── */
+/* ── Stats Modal (Atualizado com Conquistas) ── */
 function StatsModal({ participant, matches, preds, onClose, championPts }) {
   const stats = getDetailedStats(participant.id, matches, preds);
   const winner = getChampionWinner(matches);
@@ -193,9 +193,18 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   ];
   const maxCount = Math.max(...bars.map(b => b.count), 1);
 
+  // 🏆 LÓGICA DO SISTEMA DE CONQUISTAS
+  const badges = [];
+  if (stats.c10 >= 3) badges.push({ icon: "🎯", name: "Sniper", desc: "3+ placares exatos" });
+  if (stats.streak >= 4) badges.push({ icon: "🔥", name: "On Fire", desc: "Série de 4+ acertos" });
+  if (stats.c0 >= 5) badges.push({ icon: "🥶", name: "Pé Frio", desc: "5+ palpites zerados" });
+  if (stats.accuracy >= 60 && stats.withPredCount >= 5) badges.push({ icon: "🔮", name: "Mãe Dináh", desc: "+60% de precisão" });
+  if (stats.withPredCount >= 20) badges.push({ icon: "🎖️", name: "Veterano", desc: "20+ palpites" });
+
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 420, maxHeight: "90vh", overflowY: "auto" }}>
+        
         {/* Header */}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
@@ -213,6 +222,23 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
           <span style={{ color: C.muted, fontSize: 13 }}>pontos</span>
           {champBonus > 0 && <span style={{ fontSize: 12, background: `${C.gold}22`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "2px 8px" }}>+{champBonus} campeão 🏆</span>}
         </div>
+
+        {/* 🏅 Galeria de Conquistas */}
+        {badges.length > 0 && (
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}` }}>
+            <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Conquistas Desbloqueadas</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {badges.map(badge => (
+                <div key={badge.name} style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, padding: "6px 10px", borderRadius: 20 }}>
+                  <span style={{ fontSize: 16 }}>{badge.icon}</span>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{badge.name}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Breakdown bars */}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
