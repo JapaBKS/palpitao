@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import { createClient } from '@supabase/supabase-js';
 
-// ⚠️ ATENÇÃO: Substitua pelas suas chaves do Supabase!
 const supabaseUrl = 'https://sfpdbotvobdzuckpfcbv.supabase.co';
 const supabaseKey = 'sb_publishable_FQaWYA6nqB1Fz9IS2O4klg_Eu1Q2mU4';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-/* ── Mobile hook ── */
+/* ── Hooks ── */
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 600);
   useEffect(() => {
@@ -35,11 +34,11 @@ function calcPts(pred, result) {
 }
 
 function getStats(pid, matches, preds) {
-  let total = 0, c10 = 0, c7 = 0, c5 = 0, c2 = 0;
+  let total = 0, c10 = 0, c7 = 0, c5 = 0, c2 = 0, c0 = 0;
   for (const m of matches) {
     if (!m.result) continue;
     const p = preds[pid]?.[m.id];
-    if (!p) continue;
+    if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) continue;
     const pts = calcPts(p, m.result);
     if (pts == null) continue;
     total += pts;
@@ -47,29 +46,60 @@ function getStats(pid, matches, preds) {
     else if (pts === 7) c7++;
     else if (pts === 5) c5++;
     else if (pts === 2) c2++;
+    else c0++;
   }
-  return { total, c10, c7, c5, c2 };
+  return { total, c10, c7, c5, c2, c0 };
 }
 
-function getRanked(participants, matches, preds) {
+function getDetailedStats(pid, matches, preds) {
+  const base = getStats(pid, matches, preds);
+  let bestPts = -1, bestMatch = null, worstPts = 11, worstMatch = null;
+  let streak = 0, streakDone = false;
+  const played = matches.filter(m => m.result);
+  for (let i = played.length - 1; i >= 0; i--) {
+    const m = played[i];
+    const p = preds[pid]?.[m.id];
+    if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) { if (!streakDone) streakDone = true; continue; }
+    const pts = calcPts(p, m.result);
+    if (pts == null) { if (!streakDone) streakDone = true; continue; }
+    if (!streakDone) { if (pts > 0) streak++; else streakDone = true; }
+    if (pts > bestPts) { bestPts = pts; bestMatch = m; }
+    if (pts < worstPts) { worstPts = pts; worstMatch = m; }
+  }
+  const withPred = played.filter(m => { const p = preds[pid]?.[m.id]; return p && p.a !== "" && p.b !== "" && p.a != null && p.b != null; });
+  const accuracy = withPred.length > 0 ? Math.round(((base.c10 + base.c7 + base.c5) / withPred.length) * 100) : 0;
+  return { ...base, bestPts, bestMatch, worstPts, worstMatch, streak, withPredCount: withPred.length, accuracy };
+}
+
+function getChampionWinner(matches) {
+  const final = matches.find(m => m.phase === "Final" && m.result);
+  if (!final) return null;
+  if (final.result.a > final.result.b) return final.teamA;
+  if (final.result.b > final.result.a) return final.teamB;
+  return null;
+}
+
+function getRanked(participants, matches, preds, championPts = 20) {
+  const winner = getChampionWinner(matches);
   return [...participants]
-    .map((p) => ({ ...p, ...getStats(p.id, matches, preds) }))
+    .map(p => {
+      const stats = getStats(p.id, matches, preds);
+      const champBonus = (winner && p.champion_pick &&
+        p.champion_pick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
+      return { ...p, ...stats, total: stats.total + champBonus, champBonus };
+    })
     .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5);
 }
 
-// Verifica se a hora atual já passou da hora do jogo (Bloqueio Automático)
 function isLocked(dateStr) {
   if (!dateStr || dateStr.includes("TBD")) return false;
   try {
     const match = dateStr.match(/(\d{2})\/(\d{2}).*- (\d{2}):(\d{2})/);
     if (!match) return false;
     const [, day, month, hour, minute] = match;
-    // Formato ISO: Ano-Mês-DiaTHora:Minuto:00-03:00 (Fuso horário de Brasília)
     const matchDate = new Date(`2026-${month}-${day}T${hour}:${minute}:00-03:00`);
     return new Date() > matchDate;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
 const PHASES = ["Fase de Grupos", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
@@ -101,13 +131,14 @@ const GHOST_BTN = (extra = {}) => ({
 });
 
 const ptsColor = { 10: C.gold, 7: C.green, 5: C.blue, 2: C.bronze, 0: C.muted };
-const ptsBg = { 10: "#1a1200", 7: "#001a0d", 5: "#001428", 2: "#1a0a00", 0: "#101a17" };
+const ptsBg   = { 10: "#1a1200", 7: "#001a0d", 5: "#001428", 2: "#1a0a00", 0: "#101a17" };
 
 /* ── Sub-components ── */
 function Empty({ icon, msg }) {
   return (
     <div style={{ textAlign: "center", padding: "60px 0", color: C.muted }}>
-      <div style={{ fontSize: 48, marginBottom: 12 }}>{icon}</div><div style={{ fontSize: 15 }}>{msg}</div>
+      <div style={{ fontSize: 48, marginBottom: 12 }}>{icon}</div>
+      <div style={{ fontSize: 15 }}>{msg}</div>
     </div>
   );
 }
@@ -132,22 +163,227 @@ function Divider({ label }) {
   return <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 17, letterSpacing: 1, color: C.muted, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 10 }}>{label}</div>;
 }
 
+/* ── Toast ── */
+function Toast({ message, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 2500);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return (
+    <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: C.greenDim, color: "#fff", borderRadius: 20, padding: "12px 24px", fontWeight: 700, fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px #000c", whiteSpace: "nowrap", pointerEvents: "none" }}>
+      {message}
+    </div>
+  );
+}
+
+/* ── Stats Modal ── */
+function StatsModal({ participant, matches, preds, onClose, championPts }) {
+  const stats = getDetailedStats(participant.id, matches, preds);
+  const winner = getChampionWinner(matches);
+  const champPick = participant.champion_pick || "";
+  const champBonus = (winner && champPick && champPick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
+  const totalWithChamp = stats.total + champBonus;
+
+  const bars = [
+    { label: "Exato",     pts: 10, count: stats.c10, color: C.gold   },
+    { label: "Tend+Gol",  pts:  7, count: stats.c7,  color: C.green  },
+    { label: "Tendência", pts:  5, count: stats.c5,  color: C.blue   },
+    { label: "1 Gol",     pts:  2, count: stats.c2,  color: C.bronze },
+    { label: "Erro",      pts:  0, count: stats.c0,  color: C.muted  },
+  ];
+  const maxCount = Math.max(...bars.map(b => b.count), 1);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 420, maxHeight: "90vh", overflowY: "auto" }}>
+        {/* Header */}
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 18, color: C.text }}>{participant.name}</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+              {stats.withPredCount} palpites · {stats.accuracy}% acerto · 🔥 série de {stats.streak}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+        </div>
+
+        {/* Total pts */}
+        <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 48, color: C.gold, lineHeight: 1 }}>{totalWithChamp}</span>
+          <span style={{ color: C.muted, fontSize: 13 }}>pontos</span>
+          {champBonus > 0 && <span style={{ fontSize: 12, background: `${C.gold}22`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "2px 8px" }}>+{champBonus} campeão 🏆</span>}
+        </div>
+
+        {/* Breakdown bars */}
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Breakdown</div>
+          {bars.map(b => (
+            <div key={b.pts} style={{ display: "grid", gridTemplateColumns: "100px 1fr 24px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <PtsBadge pts={b.pts} />
+                <span style={{ fontSize: 11, color: b.color, fontWeight: 700 }}>{b.label}</span>
+              </div>
+              <div style={{ background: C.card, borderRadius: 4, height: 8, overflow: "hidden" }}>
+                <div style={{ width: `${(b.count / maxCount) * 100}%`, height: "100%", background: b.color, borderRadius: 4 }} />
+              </div>
+              <div style={{ fontSize: 13, color: b.color, fontWeight: 900, textAlign: "right" }}>{b.count}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Best / Worst / Champion */}
+        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+          {stats.bestMatch && (
+            <div style={{ background: `${C.gold}0a`, border: `1px solid ${C.gold}33`, borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 10, color: C.gold, fontWeight: 700, marginBottom: 4 }}>⭐ MELHOR JOGO</div>
+              <div style={{ fontSize: 13, color: C.text }}>{stats.bestMatch.teamA} × {stats.bestMatch.teamB}</div>
+              <div style={{ fontSize: 12, color: C.muted }}>Palpite: {preds[participant.id]?.[stats.bestMatch.id]?.a}×{preds[participant.id]?.[stats.bestMatch.id]?.b} · +{stats.bestPts}pts</div>
+            </div>
+          )}
+          {stats.worstMatch && stats.worstPts === 0 && (
+            <div style={{ background: `${C.red}0a`, border: `1px solid ${C.red}33`, borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 10, color: C.red, fontWeight: 700, marginBottom: 4 }}>💔 PIOR JOGO</div>
+              <div style={{ fontSize: 13, color: C.text }}>{stats.worstMatch.teamA} × {stats.worstMatch.teamB}</div>
+              <div style={{ fontSize: 12, color: C.muted }}>Palpite: {preds[participant.id]?.[stats.worstMatch.id]?.a}×{preds[participant.id]?.[stats.worstMatch.id]?.b} · 0pts</div>
+            </div>
+          )}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 22 }}>🏆</span>
+            <div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>Palpite de Campeão</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: champBonus > 0 ? C.gold : C.text }}>
+                {champPick || <span style={{ color: C.muted, fontStyle: "italic" }}>Não definido</span>}
+                {champBonus > 0 && " ✅"}
+                {winner && champPick && champBonus === 0 && " ❌"}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Champion Section ── */
+const GRUPOS = {
+  A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
+  B: ["Canadá", "Bósnia", "Catar", "Suíça"],
+  C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
+  D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
+  E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
+  F: ["Holanda", "Japão", "Suécia", "Tunísia"],
+  G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
+  H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
+  I: ["França", "Senegal", "Noruega", "Repescagem Intercontinental 2"],
+  J: ["Argentina", "Argélia", "Áustria", "Jordânia"],
+  K: ["Portugal", "RD Congo", "Uzbequistão", "Colômbia"],
+  L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
+};
+const ALL_TEAMS = Object.values(GRUPOS).flat().sort();
+
+function ChampionSection({ activePid, participants, isAdmin, onPickChampion, championPts, onSetChampionPts, matches }) {
+  const activeUser = participants.find(p => p.id === activePid);
+  const winner = getChampionWinner(matches);
+  const finalMatch = matches.find(m => m.phase === "Final");
+  const champLocked = finalMatch ? isLocked(finalMatch.date) : false;
+  const myPick = activeUser?.champion_pick || "";
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.gold}55`, borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 24 }}>🏆</span>
+          <div>
+            <div style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>Palpite do Campeão</div>
+            <div style={{ fontSize: 11, color: C.muted }}>Vale {championPts} pontos bônus</div>
+          </div>
+        </div>
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 5 }}>
+            {[15, 20, 30].map(v => (
+              <button key={v} onClick={() => onSetChampionPts(v)}
+                style={{ ...GHOST_BTN({}), background: championPts === v ? `${C.gold}22` : "none", color: championPts === v ? C.gold : C.muted, borderColor: championPts === v ? `${C.gold}66` : C.border, minHeight: 28, padding: "3px 10px", fontSize: 11 }}>
+                {v}pts
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {winner && (
+        <div style={{ background: `${C.gold}11`, border: `1px solid ${C.gold}44`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>🏆 Campeão da Copa</div>
+          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, color: C.gold }}>{winner}</div>
+        </div>
+      )}
+
+      {!champLocked ? (
+        <select value={myPick} onChange={e => onPickChampion(activePid, e.target.value)} style={INP({ fontSize: 15 })}>
+          <option value="">— Escolha o campeão —</option>
+          {ALL_TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      ) : (
+        <div style={{ fontSize: 14, color: C.text, fontWeight: 700, padding: "4px 0" }}>
+          Seu palpite: {myPick || <span style={{ color: C.muted, fontStyle: "italic", fontWeight: 400 }}>Não registrado</span>}
+          {winner && myPick && (myPick.toLowerCase().trim() === winner.toLowerCase().trim()
+            ? <span style={{ color: C.gold, marginLeft: 8 }}>✅ +{championPts}pts!</span>
+            : <span style={{ color: C.red, marginLeft: 8 }}>❌</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Post-Game Mural ── */
+function PostGameMural({ match, participants, preds }) {
+  const [open, setOpen] = useState(false);
+  const sorted = [...participants].sort((a, b) => {
+    const pa = calcPts(preds[a.id]?.[match.id], match.result) ?? -1;
+    const pb = calcPts(preds[b.id]?.[match.id], match.result) ?? -1;
+    return pb - pa;
+  });
+  return (
+    <div style={{ marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
+        <span style={{ fontSize: 9, display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}>▶</span>
+        {open ? "Fechar palpites" : "Ver palpites de todos"}
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
+          {sorted.map(p => {
+            const pred = preds[p.id]?.[match.id];
+            const pts = match.result ? calcPts(pred, match.result) : null;
+            const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
+            return (
+              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 6, background: C.surface }}>
+                <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                <span style={{ fontSize: 13, color: hasPred ? C.text : C.border, fontFamily: "'Bebas Neue', cursive", letterSpacing: 1, minWidth: 50, textAlign: "center" }}>
+                  {hasPred ? `${pred.a} × ${pred.b}` : "—"}
+                </span>
+                <PtsBadge pts={pts} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Scoring Legend ── */
 const RULES = [
-  { pts: 10, icon: "🎯", label: "Placar Exato",           desc: "Acertou o resultado completo"                       },
-  { pts:  7, icon: "⭐", label: "Tendência + Gols",       desc: "Acertou o vencedor e os gols de um time"           },
-  { pts:  5, icon: "✅", label: "Tendência Simples",      desc: "Acertou só o vencedor (ou empate)"                 },
-  { pts:  2, icon: "〰️", label: "Gols de um time",        desc: "Errou o vencedor, mas acertou gols de um time"     },
-  { pts:  0, icon: "❌", label: "Erro Total",             desc: "Não acertou nada"                                  },
+  { pts: 10, icon: "🎯", label: "Placar Exato",      desc: "Acertou o resultado completo" },
+  { pts:  7, icon: "⭐", label: "Tendência + Gols",  desc: "Acertou o vencedor e gols de um time" },
+  { pts:  5, icon: "✅", label: "Tendência Simples", desc: "Acertou só o vencedor (ou empate)" },
+  { pts:  2, icon: "〰️", label: "Gols de um time",   desc: "Errou o vencedor, mas acertou gols de um" },
+  { pts:  0, icon: "❌", label: "Erro Total",        desc: "Não acertou nada" },
 ];
 
 function ScoringLegend() {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ marginBottom: 20 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}
-      >
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span>📖 Como funciona a pontuação?</span>
         <span style={{ fontSize: 10, transition: "transform .2s", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
       </button>
@@ -172,22 +408,6 @@ function ScoringLegend() {
 /* ── Filter bar ── */
 const MATA_MATA = ["Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
 
-const GRUPOS = {
-  A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
-  B: ["Canadá", "Bósnia", "Catar", "Suíça"],
-  C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
-  D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
-  E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
-  F: ["Holanda", "Japão", "Suécia", "Tunísia"],
-  G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
-  H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
-  I: ["França", "Senegal", "Noruega", "Repescagem Intercontinental 2"],
-  J: ["Argentina", "Argélia", "Áustria", "Jordânia"],
-  K: ["Portugal", "RD Congo", "Uzbequistão", "Colômbia"],
-  L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
-};
-
-// Reverse lookup: lowercase team name → group letter
 const TEAM_TO_GROUP = {};
 Object.entries(GRUPOS).forEach(([letter, teams]) => {
   teams.forEach(team => { TEAM_TO_GROUP[team.toLowerCase()] = letter; });
@@ -195,12 +415,9 @@ Object.entries(GRUPOS).forEach(([letter, teams]) => {
 
 function getMatchGroup(match) {
   if (match.phase !== "Fase de Grupos") return null;
-  const a = (match.teamA || "").toLowerCase();
-  const b = (match.teamB || "").toLowerCase();
-  // Exact match first
+  const a = (match.teamA || "").toLowerCase(), b = (match.teamB || "").toLowerCase();
   if (TEAM_TO_GROUP[a]) return TEAM_TO_GROUP[a];
   if (TEAM_TO_GROUP[b]) return TEAM_TO_GROUP[b];
-  // Partial match fallback (handles slight spelling variations)
   for (const [key, letter] of Object.entries(TEAM_TO_GROUP)) {
     if (a.includes(key) || key.includes(a) || b.includes(key) || key.includes(b)) return letter;
   }
@@ -213,11 +430,11 @@ function todayDDMM() {
 }
 
 function applyFilter(matches, filter) {
-  if (filter === "hoje")              return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
-  if (filter === "grupos")            return matches.filter(m => m.phase === "Fase de Grupos");
-  if (filter === "mata")              return matches.filter(m => MATA_MATA.includes(m.phase));
-  if (filter.startsWith("grupo-"))    return matches.filter(m => getMatchGroup(m) === filter.split("-")[1]);
-  return matches; // "todos"
+  if (filter === "hoje")           return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
+  if (filter === "grupos")         return matches.filter(m => m.phase === "Fase de Grupos");
+  if (filter === "mata")           return matches.filter(m => MATA_MATA.includes(m.phase));
+  if (filter.startsWith("grupo-")) return matches.filter(m => getMatchGroup(m) === filter.split("-")[1]);
+  return matches;
 }
 
 const FILTERS_MAIN = [
@@ -239,18 +456,13 @@ const PILL = (isActive, color = C.green) => ({
 
 function FilterBar({ active, onChange, matches }) {
   const isGrupoActive = active === "grupos" || active.startsWith("grupo-");
-
   const count = (f) => applyFilter(matches, f).length;
-
   return (
     <div style={{ marginBottom: 16 }}>
-      {/* Row 1 — main filters */}
       <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, scrollbarWidth: "none" }}>
         {FILTERS_MAIN.map(f => {
           const isActive = f.id === "grupos" ? isGrupoActive : active === f.id;
-          const n = f.id === "grupos"
-            ? count("grupos")
-            : count(f.id);
+          const n = f.id === "grupos" ? count("grupos") : count(f.id);
           return (
             <button key={f.id} onClick={() => onChange(f.id)} style={PILL(isActive)}>
               {f.label}
@@ -259,23 +471,17 @@ function FilterBar({ active, onChange, matches }) {
           );
         })}
       </div>
-
-      {/* Row 2 — group sub-filters, only when Grupos is active */}
       {isGrupoActive && (
         <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingTop: 8, paddingBottom: 2, scrollbarWidth: "none" }}>
-          {/* "Todos os grupos" pill */}
           <button onClick={() => onChange("grupos")} style={PILL(active === "grupos", C.blue)}>
-            Todos
-            <span style={{ fontSize: 10, background: active === "grupos" ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count("grupos")}</span>
+            Todos<span style={{ fontSize: 10, background: active === "grupos" ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count("grupos")}</span>
           </button>
           {Object.keys(GRUPOS).map(letter => {
             const filterId = `grupo-${letter}`;
-            const isActive = active === filterId;
-            const n = count(filterId);
+            const isAct = active === filterId;
             return (
-              <button key={letter} onClick={() => onChange(filterId)} style={PILL(isActive, C.blue)}>
-                {letter}
-                <span style={{ fontSize: 10, background: isActive ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{n}</span>
+              <button key={letter} onClick={() => onChange(filterId)} style={PILL(isAct, C.blue)}>
+                {letter}<span style={{ fontSize: 10, background: isAct ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count(filterId)}</span>
               </button>
             );
           })}
@@ -286,16 +492,24 @@ function FilterBar({ active, onChange, matches }) {
 }
 
 /* ── Tabs ── */
-function TabPlacar({ participants, matches, preds }) {
+function TabPlacar({ participants, matches, preds, championPts }) {
   const isMobile = useIsMobile();
-  const ranked = getRanked(participants, matches, preds);
+  const [statsFor, setStatsFor] = useState(null);
+  const ranked = getRanked(participants, matches, preds, championPts);
   const total = participants.length * 100;
-  const played = matches.filter((m) => m.result).length;
+  const played = matches.filter(m => m.result).length;
   const medals = ["🥇", "🥈", "🥉"];
-  const prizes = [ { color: C.gold, pct: "70%", val: Math.round(total * 0.7) }, { color: C.silver, pct: "20%", val: Math.round(total * 0.2) }, { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) } ];
+  const prizes = [
+    { color: C.gold,   pct: "70%", val: Math.round(total * 0.7) },
+    { color: C.silver, pct: "20%", val: Math.round(total * 0.2) },
+    { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) },
+  ];
+  const winner = getChampionWinner(matches);
+  const recentPlayed = matches.filter(m => m.result && isLocked(m.date)).slice(-5).reverse();
 
   return (
     <div>
+      {/* Prize cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: isMobile ? 8 : 12, marginBottom: 20 }}>
         {prizes.map((pr, i) => (
           <div key={i} style={{ background: C.card, border: `1px solid ${pr.color}44`, borderRadius: 12, padding: isMobile ? "10px 6px" : "14px 10px", textAlign: "center" }}>
@@ -305,18 +519,24 @@ function TabPlacar({ participants, matches, preds }) {
           </div>
         ))}
       </div>
+
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <span>⚽ {played}/{matches.length} com resultado</span><span>💰 R$ {total.toLocaleString("pt-BR")}</span><span>👥 {participants.length}</span>
+        <span>⚽ {played}/{matches.length} com resultado</span>
+        <span>💰 R$ {total.toLocaleString("pt-BR")}</span>
+        <span>👥 {participants.length}</span>
+        {winner && <span style={{ color: C.gold }}>🏆 {winner}</span>}
       </div>
+
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante." />}
       <ScoringLegend />
+
+      {/* Ranking */}
       {ranked.length > 0 && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-          {/* Header row */}
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "44px 1fr 56px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 10, color: C.muted, display: "flex", alignItems: "center" }}>#</span>
-            <span style={{ fontSize: 10, color: C.muted, display: "flex", alignItems: "center" }}>Nome</span>
-            <span style={{ fontSize: 10, color: C.muted, display: "flex", alignItems: "center", justifyContent: "flex-end" }}>Pts</span>
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 10, color: C.muted }}>#</span>
+            <span style={{ fontSize: 10, color: C.muted }}>Nome <span style={{ opacity: 0.4 }}>↗ ver stats</span></span>
+            <span style={{ fontSize: 10, color: C.muted, textAlign: "right" }}>Pts</span>
             {!isMobile && <>
               <span style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>10</span>
               <span style={{ fontSize: 10, color: C.green, textAlign: "center" }}>7</span>
@@ -324,13 +544,14 @@ function TabPlacar({ participants, matches, preds }) {
             </>}
           </div>
           {ranked.map((p, i) => (
-            <div key={p.id} style={{ display: "grid", gridTemplateColumns: isMobile ? "44px 1fr 56px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : 'none', background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent" }}>
+            <div key={p.id} onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent", cursor: "pointer" }}>
               <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? (isMobile ? 17 : 20) : 13, color: i >= 3 ? C.muted : undefined }}>{i < 3 ? medals[i] : `${i + 1}º`}</span>
-              <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
+              <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14 }}>{p.name}</span>
                 {!p.paid && <span style={{ fontSize: 9, background: `${C.red}22`, color: C.red, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix⚠️</span>}
+                {p.champBonus > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🏆+{p.champBonus}</span>}
                 {isMobile && (
-                  <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexShrink: 0 }}>
+                  <span style={{ marginLeft: "auto", display: "flex", gap: 5, flexShrink: 0 }}>
                     {p.c10 > 0 && <span style={{ fontSize: 10, color: C.gold }}>×{p.c10}</span>}
                     {p.c7 > 0 && <span style={{ fontSize: 10, color: C.green }}>×{p.c7}</span>}
                   </span>
@@ -346,6 +567,40 @@ function TabPlacar({ participants, matches, preds }) {
           ))}
         </div>
       )}
+
+      {/* Modo leitura — palpites recentes */}
+      {recentPlayed.length > 0 && (
+        <div>
+          <Divider label="Palpites Recentes" />
+          {recentPlayed.map(m => (
+            <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamA}</span>
+                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 20, color: C.green, padding: "2px 14px", background: `${C.green}12`, border: `1px solid ${C.greenDim}`, borderRadius: 8 }}>{m.result.a} × {m.result.b}</span>
+                <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {ranked.map(p => {
+                  const pred = preds[p.id]?.[m.id];
+                  const pts = calcPts(pred, m.result);
+                  const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
+                  return (
+                    <div key={p.id} onClick={() => setStatsFor(p)} style={{ display: "flex", alignItems: "center", gap: 4, background: C.surface, borderRadius: 6, padding: "4px 8px", border: `1px solid ${pts != null ? (ptsColor[pts] + "55") : C.border}`, cursor: "pointer" }}>
+                      <span style={{ fontSize: 11, color: C.muted }}>{p.name.split(" ")[0]}</span>
+                      <span style={{ fontSize: 12, fontFamily: "'Bebas Neue', cursive", color: hasPred ? C.text : C.border, letterSpacing: 1 }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span>
+                      {pts != null && <PtsBadge pts={pts} />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {statsFor && (
+        <StatsModal participant={statsFor} matches={matches} preds={preds} onClose={() => setStatsFor(null)} championPts={championPts} />
+      )}
     </div>
   );
 }
@@ -353,8 +608,6 @@ function TabPlacar({ participants, matches, preds }) {
 function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
-
-  // Estados para controlar a edição de um usuário existente
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editPin, setEditPin] = useState("");
@@ -362,34 +615,24 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   const add = () => {
     if (!name.trim()) return alert("Por favor, digite seu nome!");
     if (pin.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!");
-
-    onChange([...participants, { id: uid(), name: name.trim(), paid: false, pin: pin }]);
-    setName("");
-    setPin("");
-    
-    if (!isAdmin) alert("Conta criada com sucesso! Vá na aba Palpites para fazer login e jogar.");
+    onChange([...participants, { id: uid(), name: name.trim(), paid: false, pin }]);
+    setName(""); setPin("");
+    if (!isAdmin) alert("Conta criada! Vá na aba Palpites para fazer login.");
   };
 
   const startEdit = (p) => {
-    // Se não for o Admin, pede a senha atual para provar que é a própria pessoa
     if (!isAdmin) {
       const authPin = window.prompt(`🔒 Digite a senha atual de ${p.name} para liberar a edição:`);
-      if (authPin === null) return; // Se a pessoa clicar em "Cancelar"
+      if (authPin === null) return;
       if (authPin !== p.pin) return alert("❌ Senha incorreta!");
     }
-    
-    setEditingId(p.id);
-    setEditName(p.name);
-    setEditPin(p.pin);
+    setEditingId(p.id); setEditName(p.name); setEditPin(p.pin);
   };
 
   const saveEdit = (id) => {
     if (!editName.trim()) return alert("O nome não pode ficar vazio!");
     if (editPin.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!");
-
-    // Atualiza a lista com os novos dados
-    const updated = participants.map(p => p.id === id ? { ...p, name: editName.trim(), pin: editPin } : p);
-    onChange(updated);
+    onChange(participants.map(p => p.id === id ? { ...p, name: editName.trim(), pin: editPin } : p));
     setEditingId(null);
   };
 
@@ -397,23 +640,20 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
 
   return (
     <div>
-      {/* Formulário de Cadastro */}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <h3 style={{ marginBottom: 12, color: C.text, fontSize: 16 }}>
           {isAdmin ? "⚙️ Adicionar Jogador (Admin)" : "👋 Novo por aqui? Cadastre-se"}
         </h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu Nome" style={INP({ flex: 1, minWidth: 140 })} />
-          <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Senha (mín. 4)" style={INP({ width: 130, textAlign: "center", letterSpacing: 2 })} />
+          <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Senha (mín. 4)" style={INP({ width: 140, textAlign: "center", letterSpacing: 2 })} />
           <button onClick={add} style={BTN()}>{isAdmin ? "+ Adicionar" : "Me Cadastrar"}</button>
         </div>
-        {!isAdmin && <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Crie sua conta e senha para registrar seus palpites com segurança. Apenas o administrador aprova o status do pagamento.</p>}
+        {!isAdmin && <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Crie sua conta e senha para registrar seus palpites. Apenas o admin aprova o pagamento.</p>}
       </div>
 
-      {/* Lista de Participantes */}
       {participants.map((p) => (
         <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
-          
           {editingId === p.id ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ padding: "8px 10px" })} />
@@ -431,7 +671,7 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
               {isAdmin && (
                 <>
                   <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>Mudar Pix</button>
-                  <button onClick={() => { if(window.confirm(`Tem certeza que deseja excluir ${p.name}?`)) onDelete(p.id) }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 24, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  <button onClick={() => { if(window.confirm(`Excluir ${p.name}?`)) onDelete(p.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 24, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                 </>
               )}
             </div>
@@ -457,23 +697,15 @@ function TabJogos({ matches, onChange, isAdmin }) {
     setTeamA(""); setTeamB(""); setDateStr("");
   };
 
-  const startEdit = (m) => {
-    setEditId(m.id);
-    setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" });
-  };
+  const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
 
   const saveResult = (id) => {
     const a = parseInt(tempR.a), b = parseInt(tempR.b);
-    if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) {
-      onChange(matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m)));
-    }
+    if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) onChange(matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m)));
     setEditId(null);
   };
 
-  const clearResult = (id) => {
-    onChange(matches.map((m) => (m.id === id ? { ...m, result: null } : m)));
-    setEditId(null);
-  };
+  const clearResult = (id) => { onChange(matches.map((m) => (m.id === id ? { ...m, result: null } : m))); setEditId(null); };
 
   const filtered = applyFilter(matches, filter);
   const grouped = PHASES.map((ph) => ({ ph, ms: filtered.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
@@ -494,18 +726,15 @@ function TabJogos({ matches, onChange, isAdmin }) {
           </div>
         </div>
       )}
-
       {!isAdmin && <div style={{ marginBottom: 16, color: C.gold, fontSize: 13 }}>⚠️ Apenas o administrador insere os placares oficiais.</div>}
-
       <FilterBar active={filter} onChange={setFilter} matches={matches} />
-
       {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo neste filtro." />}
       {grouped.map(({ ph, ms }) => (
         <div key={ph} style={{ marginBottom: 24 }}>
           <Divider label={`${ph} (${ms.length})`} />
           {ms.map((m) => (
             <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "11px 14px", display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-              {m.date && <span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date} {isLocked(m.date) ? " (Encerrado)" : ""}</span>}
+              {m.date && <span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{isLocked(m.date) ? " (Encerrado)" : ""}</span>}
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {editId === m.id ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
@@ -544,11 +773,11 @@ function TabJogos({ matches, onChange, isAdmin }) {
   );
 }
 
-function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked }) {
+function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickChampion, championPts, onSetChampionPts }) {
   const isMobile = useIsMobile();
   const [selPid, setSelPid] = useState("");
   const [pinInput, setPinInput] = useState("");
-  const [filter, setFilter] = useState("todos");
+  const [filter, setFilter] = useState("hoje");
 
   const activePid = participants.find((p) => p.id === selPid)?.id || participants[0]?.id || "";
   const activeUser = participants.find((p) => p.id === activePid);
@@ -557,6 +786,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
     if (!activePid) return;
     const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { ...(preds[activePid]?.[matchId] || {}), [side]: val } } };
     onChange(next);
+    onSaved();
   };
 
   const handleUnlock = () => {
@@ -565,11 +795,8 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
       savePin(activeUser.id, pinInput);
       setSessionUnlocked({ ...sessionUnlocked, [activeUser.id]: true });
     } else {
-      if (activeUser.pin === pinInput) {
-        setSessionUnlocked({ ...sessionUnlocked, [activeUser.id]: true });
-      } else {
-        alert("Senha incorreta!");
-      }
+      if (activeUser.pin === pinInput) setSessionUnlocked({ ...sessionUnlocked, [activeUser.id]: true });
+      else alert("Senha incorreta!");
     }
   };
 
@@ -578,21 +805,23 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
   const stats = activePid ? getStats(activePid, matches, preds) : null;
   const isUnlocked = sessionUnlocked[activePid];
+
+  const pendingCount = matches.filter(m => {
+    if (isLocked(m.date)) return false;
+    const p = preds[activePid]?.[m.id];
+    return !(p && p.a !== "" && p.b !== "" && p.a != null && p.b != null);
+  }).length;
+
   const filteredMatches = applyFilter(matches, filter);
   const grouped = PHASES.map((ph) => ({ ph, ms: filteredMatches.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
 
   return (
     <div>
+      {/* Participant selector */}
       <div style={{ marginBottom: 16 }}>
         {isMobile ? (
-          <select
-            value={activePid}
-            onChange={e => { setSelPid(e.target.value); setPinInput(""); }}
-            style={INP({ fontSize: 15, fontWeight: 700 })}
-          >
-            {participants.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>
-            ))}
+          <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>
+            {participants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}
           </select>
         ) : (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -610,7 +839,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
           <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
           <h3 style={{ marginBottom: 8, color: C.text }}>{activeUser?.pin ? "Área Protegida" : "Crie sua Senha"}</h3>
           <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>
-            {activeUser?.pin ? `Digite a senha do(a) ${activeUser.name} para editar os palpites.` : `Como é seu primeiro acesso, crie uma senha para proteger seus palpites.`}
+            {activeUser?.pin ? `Digite a senha do(a) ${activeUser.name} para editar os palpites.` : "Como é seu primeiro acesso, crie uma senha para proteger seus palpites."}
           </p>
           <div style={{ display: "flex", gap: 10, justifyContent: "center", maxWidth: 300, margin: "0 auto" }}>
             <input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleUnlock()} placeholder="Senha..." style={INP({ textAlign: "center", letterSpacing: 3 })} />
@@ -619,16 +848,34 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
         </div>
       ) : (
         <>
+          {/* Stats bar */}
           {stats && (
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span>
-              <span style={{ color: C.muted, fontSize: 13 }}>pontos</span>
-              <span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>10 × {stats.c10}</span>
+              <span style={{ color: C.muted, fontSize: 13 }}>pts</span>
+              <span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span>
+              <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span>
+              <span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>
+              {pendingCount > 0 && (
+                <span style={{ marginLeft: "auto", background: `${C.gold}22`, color: C.gold, border: `1px solid ${C.gold}55`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>
+                  ⚠️ {pendingCount} sem palpite
+                </span>
+              )}
             </div>
           )}
 
-          <ScoringLegend />
+          {/* Champion pick */}
+          <ChampionSection
+            activePid={activePid}
+            participants={participants}
+            matches={matches}
+            isAdmin={isAdmin}
+            onPickChampion={onPickChampion}
+            championPts={championPts}
+            onSetChampionPts={onSetChampionPts}
+          />
 
+          <ScoringLegend />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
 
           {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo neste filtro." />}
@@ -639,10 +886,9 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                 const pred = preds[activePid]?.[m.id] || {};
                 const pts = m.result ? calcPts(pred, m.result) : null;
                 const locked = isLocked(m.date);
-                
                 return (
-                  <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6, opacity: locked ? 0.7 : 1 }}>
-                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : C.greenDim, fontWeight: 700 }}>{m.date} {locked ? " (Tempo Esgotado)" : ""}</span>}
+                  <div key={m.id} style={{ background: C.card, border: `1px solid ${locked ? C.border : C.greenDim + "55"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{locked ? " (Encerrado)" : ""}</span>}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamA}</span>
                       <ScoreIn value={pred.a ?? ""} onChange={(v) => setPred(m.id, "a", v)} disabled={locked} />
@@ -651,6 +897,8 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
                       <PtsBadge pts={pts} />
                     </div>
+                    {/* Mural: visible only after match started */}
+                    {locked && <PostGameMural match={m} participants={participants} preds={preds} />}
                   </div>
                 );
               })}
@@ -662,10 +910,10 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   );
 }
 
-function TabVisao({ participants, matches, preds }) {
+function TabVisao({ participants, matches, preds, championPts }) {
   if (participants.length === 0) return <Empty icon="👥" msg="Adicione participantes primeiro." />;
-  const ranked = getRanked(participants, matches, preds);
-  const played = matches.filter((m) => m.result);
+  const ranked = getRanked(participants, matches, preds, championPts);
+  const played = matches.filter((m) => m.result && isLocked(m.date));
   if (played.length === 0) return <Empty icon="⏳" msg="Nenhum resultado cadastrado ainda." />;
 
   return (
@@ -675,7 +923,7 @@ function TabVisao({ participants, matches, preds }) {
           <tr style={{ background: C.surface }}>
             <th style={{ padding: "8px 12px", textAlign: "left", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>Jogo</th>
             <th style={{ padding: "8px 8px", textAlign: "center", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>Resultado</th>
-            {ranked.map((p) => <th key={p.id} style={{ padding: "8px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name.split(" ")[0]}</th>)}
+            {ranked.map((p) => <th key={p.id} style={{ padding: "8px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap", maxWidth: 80 }}>{p.name.split(" ")[0]}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -703,7 +951,7 @@ function TabVisao({ participants, matches, preds }) {
   );
 }
 
-/* ── App Shell Principal ── */
+/* ── App Shell ── */
 export default function BolaoApp() {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState("placar");
@@ -712,7 +960,9 @@ export default function BolaoApp() {
   const [preds, setPreds] = useState({});
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [sessionUnlocked, setSessionUnlocked] = useState({}); // Controla quem está logado nesta tela
+  const [sessionUnlocked, setSessionUnlocked] = useState({});
+  const [championPts, setChampionPts] = useState(20);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -722,11 +972,10 @@ export default function BolaoApp() {
 
         const { data: dbJogos } = await supabase.from('jogos').select('*');
         if (dbJogos && dbJogos.length > 0) {
-          const formatados = dbJogos.map(j => ({
+          setMatches(dbJogos.map(j => ({
             id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date,
-            result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null
-          }));
-          setMatches(formatados);
+            result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null,
+          })));
         }
 
         const { data: dbPalpites } = await supabase.from('palpites').select('*');
@@ -738,67 +987,66 @@ export default function BolaoApp() {
           });
           setPreds(objPreds);
         }
+
+        // Load champion_pts from config table
+        const { data: cfg } = await supabase.from('config').select('valor').eq('chave', 'champion_pts').single();
+        if (cfg?.valor) setChampionPts(parseInt(cfg.valor));
       } catch (err) { console.error("Erro no Supabase:", err); }
       setReady(true);
     })();
   }, []);
 
-  const sp = async (d) => {
-    setParticipants(d);
-    await supabase.from('participantes').upsert(d);
-  };
-
-  const removeP = async (id) => {
-    // 1. Tira da tela na hora
-    setParticipants(participants.filter(p => p.id !== id));
-    // 2. Manda o Supabase apagar no banco
-    await supabase.from('participantes').delete().eq('id', id);
-  };
-
+  const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
+  const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
     setMatches(d);
-    const jogosFormatados = d.map(j => ({
-      id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD",
-      result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null
-    }));
-    await supabase.from('jogos').upsert(jogosFormatados);
+    await supabase.from('jogos').upsert(d.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
   };
 
   const spr = async (d) => {
     setPreds(d);
-    const palpitesParaSalvar = [];
+    const toSave = [];
     Object.keys(d).forEach(participante_id => {
       Object.keys(d[participante_id]).forEach(jogo_id => {
-        const palpite = d[participante_id][jogo_id];
-        if (palpite.a !== "" && palpite.b !== "" && palpite.a !== null && palpite.b !== null) {
-          palpitesParaSalvar.push({ participante_id, jogo_id, palpite_a: parseInt(palpite.a), palpite_b: parseInt(palpite.b) });
-        }
+        const p = d[participante_id][jogo_id];
+        if (p.a !== "" && p.b !== "" && p.a != null && p.b != null)
+          toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b) });
       });
     });
-    if (palpitesParaSalvar.length > 0) {
-      await supabase.from('palpites').upsert(palpitesParaSalvar, { onConflict: 'participante_id, jogo_id' });
-    }
+    if (toSave.length > 0) await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
   };
 
   const savePin = async (userId, pin) => {
-    const updated = participants.map(p => p.id === userId ? { ...p, pin } : p);
-    setParticipants(updated);
+    setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x));
     await supabase.from('participantes').update({ pin }).eq('id', userId);
+  };
+
+  const onPickChampion = async (pid, pick) => {
+    const updated = participants.map(p => p.id === pid ? { ...p, champion_pick: pick } : p);
+    setParticipants(updated);
+    await supabase.from('participantes').update({ champion_pick: pick }).eq('id', pid);
+  };
+
+  const onSetChampionPts = async (pts) => {
+    setChampionPts(pts);
+    await supabase.from('config').upsert({ chave: 'champion_pts', valor: String(pts) });
   };
 
   const handleAdminLogin = () => {
     if (isAdmin) { setIsAdmin(false); return; }
     const pwd = prompt("Área Restrita. Digite a senha do Administrador:");
-    if (pwd === "bruno2026") setIsAdmin(true); // <--- SENHA DO ADMIN AQUI
+    if (pwd === "bruno2026") setIsAdmin(true);
     else if (pwd !== null) alert("Senha incorreta!");
   };
 
+  const showToast = () => setToast("✅ Palpite salvo!");
+
   const TABS = [
-    { id: "placar", label: "🏆 Placar" },
+    { id: "placar",        label: "🏆 Placar"       },
     { id: "participantes", label: "👥 Participantes" },
-    { id: "jogos", label: "⚽ Jogos" },
-    { id: "palpites", label: "📋 Palpites" },
-    { id: "visao", label: "📊 Visão Geral" },
+    { id: "jogos",         label: "⚽ Jogos"         },
+    { id: "palpites",      label: "📋 Palpites"      },
+    { id: "visao",         label: "📊 Visão Geral"   },
   ];
 
   if (!ready) return <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontFamily: "sans-serif", fontSize: 18 }}>⚽ Conectando ao Banco de Dados...</div>;
@@ -816,9 +1064,8 @@ export default function BolaoApp() {
         ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
       `}</style>
 
-      {/* Header */}
       <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10 }}>
           <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 20 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">
             ⚽ BOLÃO DA COPA {isAdmin && "<ADMIN>"}
           </div>
@@ -828,8 +1075,6 @@ export default function BolaoApp() {
             </span>
           </div>
         </div>
-
-        {/* Tabs nav */}
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
           {TABS.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 11 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>
@@ -840,12 +1085,14 @@ export default function BolaoApp() {
       </div>
 
       <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}>
-        {tab === "placar" && <TabPlacar participants={participants} matches={matches} preds={preds} />}
+        {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} championPts={championPts} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
-        {tab === "jogos" && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
-        {tab === "palpites" && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} />}
-        {tab === "visao" && <TabVisao participants={participants} matches={matches} preds={preds} />}
+        {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
+        {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickChampion={onPickChampion} championPts={championPts} onSetChampionPts={onSetChampionPts} />}
+        {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} championPts={championPts} />}
       </div>
+
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
   );
 }
