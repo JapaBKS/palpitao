@@ -505,7 +505,7 @@ function TabPlacar({ participants, matches, preds, championPts }) {
     { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) },
   ];
   const winner = getChampionWinner(matches);
-  const recentPlayed = matches.filter(m => m.result && isLocked(m.date)).slice(-5).reverse();
+  const recentPlayed = matches.filter(m => m.result).slice(-5).reverse();
 
   return (
     <div>
@@ -897,8 +897,8 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
                       <PtsBadge pts={pts} />
                     </div>
-                    {/* Mural: visible only after match started */}
-                    {locked && <PostGameMural match={m} participants={participants} preds={preds} />}
+                    {/* Mural: visible as soon as result is entered */}
+                    {m.result && <PostGameMural match={m} participants={participants} preds={preds} />}
                   </div>
                 );
               })}
@@ -913,7 +913,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 function TabVisao({ participants, matches, preds, championPts }) {
   if (participants.length === 0) return <Empty icon="👥" msg="Adicione participantes primeiro." />;
   const ranked = getRanked(participants, matches, preds, championPts);
-  const played = matches.filter((m) => m.result && isLocked(m.date));
+  const played = matches.filter((m) => m.result);
   if (played.length === 0) return <Empty icon="⏳" msg="Nenhum resultado cadastrado ainda." />;
 
   return (
