@@ -723,14 +723,131 @@ function TabJogos({ matches, onChange, isAdmin }) {
     setTeamA(""); setTeamB(""); setDateStr("");
   };
 
-  const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
+  const gerarCopaFaseDeGrupos = () => {
+    if (!window.confirm("Deseja gerar automaticamente todos os jogos da Fase de Grupos?")) return;
+    let novosJogos = [...matches];
+    let diaInicial = 11; 
+    Object.entries(GRUPOS).forEach(([nome, t], gIdx) => {
+      const confrontos = [[t[0], t[1]], [t[2], t[3]], [t[0], t[2]], [t[1], t[3]], [t[3], t[0]], [t[1], t[2]]];
+      confrontos.forEach((c, cIdx) => {
+        const diaJogo = diaInicial + Math.floor(gIdx / 2) + Math.floor(cIdx / 2);
+        novosJogos.push({ id: uid(), teamA: c[0], teamB: c[1], phase: "Fase de Grupos", date: `${diaJogo}/06 (TBD) - 16:00`, result: null });
+      });
+    });
+    onChange(novosJogos);
+    alert("Fase de Grupos gerada com sucesso!");
+  };
 
+  // 🏆 O MOTOR DE CHAVEAMENTO DO MATA-MATA (Regra FIFA 48 Seleções)
+  const gerarMataMata = () => {
+    const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result);
+    if (groupMatches.length < 72) {
+      if(!window.confirm("Atenção: Nem todos os 72 jogos da fase de grupos têm resultado ainda. O cálculo vai considerar 0 pontos para os jogos pendentes. Deseja continuar?")) return;
+    }
+
+    // 1. Calcula a Tabela de Classificação
+    const st = {};
+    Object.keys(GRUPOS).forEach(g => { st[g] = GRUPOS[g].map(t => ({ team: t, pts: 0, gf: 0, ga: 0, gd: 0 })); });
+
+    groupMatches.forEach(m => {
+      const gA = TEAM_TO_GROUP[m.teamA.toLowerCase()], gB = TEAM_TO_GROUP[m.teamB.toLowerCase()];
+      const rA = m.result.a, rB = m.result.b;
+      if (gA && st[gA]) {
+        const t = st[gA].find(x => x.team === m.teamA);
+        if (t) { t.gf += rA; t.ga += rB; t.gd += (rA - rB); if (rA > rB) t.pts += 3; else if (rA === rB) t.pts += 1; }
+      }
+      if (gB && st[gB]) {
+        const t = st[gB].find(x => x.team === m.teamB);
+        if (t) { t.gf += rB; t.ga += rA; t.gd += (rB - rA); if (rB > rA) t.pts += 3; else if (rA === rB) t.pts += 1; }
+      }
+    });
+
+    // 2. Extrai 1º, 2º e a lista de 3ºs
+    const firsts = {}, seconds = {};
+    let thirdsList = [];
+    Object.keys(st).forEach(g => {
+      const sorted = st[g].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0);
+      firsts[g] = sorted[0];
+      seconds[g] = sorted[1];
+      thirdsList.push({ ...sorted[2], group: g });
+    });
+
+    // 3. Pega os 8 melhores terceiros
+    thirdsList = thirdsList.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0).slice(0, 8);
+
+    // 4. Algoritmo de Combinação FIFA (Backtracking Seguro)
+    const targets = ["A", "B", "D", "E", "G", "I", "K", "L"];
+    const allowed = {
+      "A": ["C","E","F","H","I"], "B": ["E","F","G","I","J"], "D": ["B","E","F","I","J"],
+      "E": ["A","B","C","D","F"], "G": ["A","E","H","I","J"], "I": ["C","D","F","G","H"],
+      "K": ["D","E","I","J","L"], "L": ["E","H","I","J","K"]
+    };
+
+    let bestAssign = null;
+    function solve(idx, current) {
+      if (bestAssign) return;
+      if (idx === targets.length) { bestAssign = { ...current }; return; }
+      const t = targets[idx];
+      for (let i = 0; i < thirdsList.length; i++) {
+        const th = thirdsList[i];
+        const isUsed = Object.values(current).find(x => x.team === th.team);
+        const isAllowed = allowed[t].includes(th.group);
+        // Fallback flexível: Se a matriz cruzar, pelo menos evita times do mesmo grupo
+        const isFallback = !isAllowed && th.group !== t; 
+
+        if (!isUsed && (isAllowed || isFallback)) {
+          current[t] = th; solve(idx + 1, current); delete current[t];
+        }
+      }
+    }
+    solve(0, {});
+
+    // Salvaguarda extrema para evitar tela em branco
+    if (!bestAssign) {
+      bestAssign = {};
+      let available = [...thirdsList];
+      targets.forEach(t => {
+        const foundIdx = available.findIndex(x => x.group !== t);
+        if (foundIdx > -1) { bestAssign[t] = available[foundIdx]; available.splice(foundIdx, 1); } 
+        else { bestAssign[t] = available[0]; available.splice(0, 1); }
+      });
+    }
+
+    // 5. Monta a grade oficial de 32-avos
+    const r32 = [
+      { tA: firsts["A"].team, tB: bestAssign["A"].team },
+      { tA: firsts["B"].team, tB: bestAssign["B"].team },
+      { tA: firsts["C"].team, tB: seconds["F"].team },
+      { tA: firsts["D"].team, tB: bestAssign["D"].team },
+      { tA: firsts["E"].team, tB: bestAssign["E"].team },
+      { tA: firsts["F"].team, tB: seconds["C"].team },
+      { tA: firsts["G"].team, tB: bestAssign["G"].team },
+      { tA: firsts["H"].team, tB: seconds["J"].team },
+      { tA: firsts["I"].team, tB: bestAssign["I"].team },
+      { tA: firsts["J"].team, tB: seconds["H"].team },
+      { tA: firsts["K"].team, tB: bestAssign["K"].team },
+      { tA: firsts["L"].team, tB: bestAssign["L"].team },
+      { tA: seconds["A"].team, tB: seconds["B"].team },
+      { tA: seconds["D"].team, tB: seconds["E"].team },
+      { tA: seconds["G"].team, tB: seconds["I"].team },
+      { tA: seconds["K"].team, tB: seconds["L"].team }
+    ];
+
+    const novos = [...matches];
+    r32.forEach((m, idx) => {
+      novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: `28/06 (TBD) - 16:00`, result: null });
+    });
+
+    onChange(novos);
+    alert("🔥 Confrontos dos 32-avos calculados e gerados com sucesso!");
+  };
+
+  const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
   const saveResult = (id) => {
     const a = parseInt(tempR.a), b = parseInt(tempR.b);
     if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) onChange(matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m)));
     setEditId(null);
   };
-
   const clearResult = (id) => { onChange(matches.map((m) => (m.id === id ? { ...m, result: null } : m))); setEditId(null); };
 
   const filtered = applyFilter(matches, filter);
@@ -740,6 +857,14 @@ function TabJogos({ matches, onChange, isAdmin }) {
     <div>
       {isAdmin && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+            <h3 style={{ fontSize: 14, color: C.text }}>Painel de Criação</h3>
+            <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+              <button onClick={gerarCopaFaseDeGrupos} style={BTN({ background: C.surface, color: C.text, border: `1px solid ${C.border}`, fontSize: 12, padding: "6px 12px", minHeight: 32 })}>1️⃣ Gerar Grupos</button>
+              <button onClick={gerarMataMata} style={BTN({ background: C.gold, color: "#000", fontSize: 12, padding: "6px 12px", minHeight: 32 })}>⚡ Calcular 32-Avos (Mata-Mata)</button>
+            </div>
+          </div>
+          
           <div style={{ display: "grid", gridTemplateColumns: "1fr 22px 1fr", gap: 8, alignItems: "center", marginBottom: 10 }}>
             <input value={teamA} onChange={(e) => setTeamA(e.target.value)} placeholder="Time A" style={INP()} />
             <div style={{ textAlign: "center", color: C.muted, fontWeight: 900, fontSize: 16 }}>×</div>
@@ -748,7 +873,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
           <input value={dateStr} onChange={(e) => setDateStr(e.target.value)} placeholder="Data e Horário (ex: 11/06 (Qui) - 16:00)" style={INP({ marginBottom: 10 })} />
           <div style={{ display: "flex", gap: 8 }}>
             <select value={phase} onChange={(e) => setPhase(e.target.value)} style={INP({ flex: 1 })}>{PHASES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
-            <button onClick={add} style={BTN()}>+ Jogo</button>
+            <button onClick={add} style={BTN()}>+ Adicionar Jogo Manual</button>
           </div>
         </div>
       )}
