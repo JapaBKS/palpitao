@@ -69,19 +69,24 @@ function getDetailedStats(pid, matches, preds) {
     const da = parseMatchDate(a.date), db = parseMatchDate(b.date);
     if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db;
   });
-  let maxStreak = 0, curr = 0, rollingCorrect = 0, rollingTotal = 0, everAccurate = false;
+  let maxStreak = 0, currAny = 0, maxExactStreak = 0, currExact = 0;
+  let rollingCorrect = 0, rollingTotal = 0, everAccurate = false;
+  let exactDraws = 0, exactGoleadas = 0;
   for (const m of sortedPlayed) {
     const p = preds[pid]?.[m.id];
-    if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) { curr = 0; continue; }
+    if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) { currAny = 0; currExact = 0; continue; }
     const pts = calcPts(p, m.result);
-    if (pts == null) { curr = 0; continue; }
-    if (pts > 0) { curr++; if (curr > maxStreak) maxStreak = curr; } else curr = 0;
+    if (pts == null) { currAny = 0; currExact = 0; continue; }
+    if (pts > 0) { currAny++; if (currAny > maxStreak) maxStreak = currAny; } else currAny = 0;
+    if (pts === 10) { currExact++; if (currExact > maxExactStreak) maxExactStreak = currExact; } else currExact = 0;
+    if (pts === 10 && m.result.a === m.result.b) exactDraws++;
+    if (pts === 10 && Math.abs(m.result.a - m.result.b) >= 3) exactGoleadas++;
     rollingTotal++;
     if (pts >= 5) rollingCorrect++;
     if (!everAccurate && rollingTotal >= 5 && rollingCorrect / rollingTotal >= 0.60) everAccurate = true;
   }
 
-  return { ...base, bestPts, bestMatch, worstPts, worstMatch, streak, maxStreak, withPredCount: withPred.length, accuracy, everAccurate };
+  return { ...base, bestPts, bestMatch, worstPts, worstMatch, streak, maxStreak, maxExactStreak, withPredCount: withPred.length, accuracy, everAccurate, exactDraws, exactGoleadas };
 }
 
 function getChampionWinner(matches) {
@@ -216,11 +221,20 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   ];
   const maxCount = Math.max(...bars.map(b => b.count), 1);
   const badges = [];
-  if (stats.c10 >= 3) badges.push({ icon: "🎯", name: "Sniper", desc: "3+ placares exatos" });
-  if (stats.maxStreak >= 4) badges.push({ icon: "🔥", name: "On Fire", desc: `Melhor série: ${stats.maxStreak} acertos seguidos` });
-  if (stats.c0 >= 5) badges.push({ icon: "🥶", name: "Pé Frio", desc: "5+ palpites zerados" });
-  if (stats.everAccurate) badges.push({ icon: "🔮", name: "Mãe Dináh", desc: "Já teve +60% de acerto" });
-  if (stats.withPredCount >= 20) badges.push({ icon: "🎖️", name: "Veterano", desc: "20+ palpites feitos" });
+  if (stats.withPredCount >= 1)  badges.push({ icon: "🌱", name: "Estreante",       desc: "Fez o primeiro palpite" });
+  if (stats.withPredCount >= 20) badges.push({ icon: "🎖️", name: "Veterano",        desc: "20+ palpites feitos" });
+  if (stats.withPredCount >= 50) badges.push({ icon: "📋", name: "Dedicado",         desc: "50+ palpites feitos" });
+  if (stats.c10 >= 3)            badges.push({ icon: "🎯", name: "Sniper",           desc: "3+ placares exatos" });
+  if (stats.c10 >= 10)           badges.push({ icon: "⭐", name: "Craque",           desc: "10+ placares exatos" });
+  if (stats.maxExactStreak >= 3) badges.push({ icon: "🎩", name: "Hat-trick",        desc: "3 exatos consecutivos" });
+  if (stats.maxStreak >= 4)      badges.push({ icon: "🔥", name: "On Fire",          desc: `Melhor série: ${stats.maxStreak} acertos seguidos` });
+  if (stats.maxStreak >= 7)      badges.push({ icon: "🌊", name: "Maré Alta",        desc: `Série de ${stats.maxStreak}+ acertos seguidos` });
+  if (stats.c0 >= 5)             badges.push({ icon: "🥶", name: "Pé Frio",          desc: "5+ palpites zerados" });
+  if (stats.everAccurate)        badges.push({ icon: "🔮", name: "Mãe Dináh",        desc: "Já teve +60% de acerto" });
+  if (stats.exactDraws >= 2)     badges.push({ icon: "🤝", name: "Empate Certo",     desc: "2+ empates exatos acertados" });
+  if (stats.exactGoleadas >= 1)  badges.push({ icon: "💥", name: "Goleada Prevista", desc: "Exato com 3+ gols de diferença" });
+  if (stats.total >= 100)        badges.push({ icon: "💎", name: "Centenário",       desc: "100+ pontos acumulados" });
+  if (champBonus > 0)            badges.push({ icon: "🏹", name: "Caçador",          desc: "Acertou o campeão do torneio" });
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
