@@ -597,14 +597,95 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   );
 }
 
+/* ── MOTOR INTELIGENTE DE CHAVEAMENTO AUTOMÁTICO (REATIVO) ── */
+function processKnockout(currentMatches) {
+  // 1. Calcula a Fase de Grupos
+  const st = getGroupStandings(currentMatches);
+  const firsts = {}, seconds = {};
+  let thirdsList = [];
+  Object.keys(st).forEach(g => {
+    firsts[g] = st[g][0] || { team: `1º Grupo ${g}` };
+    seconds[g] = st[g][1] || { team: `2º Grupo ${g}` };
+    if (st[g][2]) thirdsList.push({ ...st[g][2], group: g });
+  });
+  thirdsList = thirdsList.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0).slice(0, 8);
+
+  const targets = ["A", "B", "D", "E", "G", "I", "K", "L"];
+  const allowed = { "A": ["C","E","F","H","I"], "B": ["E","F","G","I","J"], "D": ["B","E","F","I","J"], "E": ["A","B","C","D","F"], "G": ["A","E","H","I","J"], "I": ["C","D","F","G","H"], "K": ["D","E","I","J","L"], "L": ["E","H","I","J","K"] };
+  
+  let bestAssign = null;
+  function solve(idx, current) {
+    if (bestAssign) return;
+    if (idx === targets.length) { bestAssign = { ...current }; return; }
+    const t = targets[idx];
+    for (let i = 0; i < thirdsList.length; i++) {
+      const th = thirdsList[i];
+      if (!Object.values(current).find(x => x.team === th.team) && (allowed[t].includes(th.group) || th.group !== t)) { current[t] = th; solve(idx + 1, current); delete current[t]; }
+    }
+  }
+  solve(0, {});
+  if (!bestAssign) {
+    bestAssign = {}; let available = [...thirdsList];
+    targets.forEach(t => { 
+        const foundIdx = available.findIndex(x => x.group !== t); 
+        if (foundIdx > -1) { bestAssign[t] = available[foundIdx] || {team: "3º a definir"}; available.splice(foundIdx, 1); } 
+        else { bestAssign[t] = available[0] || {team: "3º a definir"}; available.splice(0, 1); } 
+    });
+  }
+
+  const r32 = [
+    { tA: firsts["A"].team, tB: bestAssign["A"].team }, { tA: firsts["B"].team, tB: bestAssign["B"].team }, { tA: firsts["C"].team, tB: seconds["F"].team }, { tA: firsts["D"].team, tB: bestAssign["D"].team },
+    { tA: firsts["E"].team, tB: bestAssign["E"].team }, { tA: firsts["F"].team, tB: seconds["C"].team }, { tA: firsts["G"].team, tB: bestAssign["G"].team }, { tA: firsts["H"].team, tB: seconds["J"].team },
+    { tA: firsts["I"].team, tB: bestAssign["I"].team }, { tA: firsts["J"].team, tB: seconds["H"].team }, { tA: firsts["K"].team, tB: bestAssign["K"].team }, { tA: firsts["L"].team, tB: bestAssign["L"].team },
+    { tA: seconds["A"].team, tB: seconds["B"].team }, { tA: seconds["D"].team, tB: seconds["E"].team }, { tA: seconds["G"].team, tB: seconds["I"].team }, { tA: seconds["K"].team, tB: seconds["L"].team }
+  ];
+
+  // 2. Tabela oficial de IDs e Datas do Mata-Mata
+  const K_DEF = [
+    { id: "m_73", phase: "32-avos de Final", date: "28/06 (Dom) - 16:00" }, { id: "m_74", phase: "32-avos de Final", date: "29/06 (Seg) - 17:30" }, { id: "m_75", phase: "32-avos de Final", date: "29/06 (Seg) - 22:00" }, { id: "m_76", phase: "32-avos de Final", date: "29/06 (Seg) - 14:00" },
+    { id: "m_77", phase: "32-avos de Final", date: "30/06 (Ter) - 18:00" }, { id: "m_78", phase: "32-avos de Final", date: "30/06 (Ter) - 14:00" }, { id: "m_79", phase: "32-avos de Final", date: "30/06 (Ter) - 22:00" }, { id: "m_80", phase: "32-avos de Final", date: "01/07 (Qua) - 13:00" },
+    { id: "m_81", phase: "32-avos de Final", date: "01/07 (Qua) - 21:00" }, { id: "m_82", phase: "32-avos de Final", date: "01/07 (Qua) - 17:00" }, { id: "m_83", phase: "32-avos de Final", date: "02/07 (Qui) - 20:00" }, { id: "m_84", phase: "32-avos de Final", date: "02/07 (Qui) - 16:00" },
+    { id: "m_85", phase: "32-avos de Final", date: "02/07 (Qui) - 00:00" }, { id: "m_86", phase: "32-avos de Final", date: "03/07 (Sex) - 19:00" }, { id: "m_87", phase: "32-avos de Final", date: "03/07 (Sex) - 22:30" }, { id: "m_88", phase: "32-avos de Final", date: "03/07 (Sex) - 15:00" },
+    { id: "m_89", phase: "Oitavas de Final", date: "04/07 (Sáb) - 18:00" }, { id: "m_90", phase: "Oitavas de Final", date: "04/07 (Sáb) - 14:00" }, { id: "m_91", phase: "Oitavas de Final", date: "05/07 (Dom) - 17:00" }, { id: "m_92", phase: "Oitavas de Final", date: "05/07 (Dom) - 21:00" },
+    { id: "m_93", phase: "Oitavas de Final", date: "06/07 (Seg) - 16:00" }, { id: "m_94", phase: "Oitavas de Final", date: "06/07 (Seg) - 21:00" }, { id: "m_95", phase: "Oitavas de Final", date: "07/07 (Ter) - 13:00" }, { id: "m_96", phase: "Oitavas de Final", date: "07/07 (Ter) - 17:00" },
+    { id: "m_97", phase: "Quartas de Final", date: "09/07 (Qui) - 17:00" }, { id: "m_98", phase: "Quartas de Final", date: "10/07 (Sex) - 16:00" }, { id: "m_99", phase: "Quartas de Final", date: "11/07 (Sáb) - 18:00" }, { id: "m_100", phase: "Quartas de Final", date: "11/07 (Sáb) - 22:00" },
+    { id: "m_101", phase: "Semifinal", date: "14/07 (Ter) - 16:00" }, { id: "m_102", phase: "Semifinal", date: "15/07 (Qua) - 16:00" },
+    { id: "m_103", phase: "3º Lugar", date: "18/07 (Sáb) - 18:00" }, { id: "m_104", phase: "Final", date: "19/07 (Dom) - 16:00" }
+  ];
+
+  let nextMatches = [...currentMatches];
+  
+  // Helpers para puxar Vencedor (W) e Perdedor (L) dinamicamente
+  const getM = (id) => nextMatches.find(m => m.id === id);
+  const getW = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamA : (m.result.b > m.result.a ? m.teamB : m.teamA)) : null; };
+  const getL = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamB : (m.result.b > m.result.a ? m.teamA : m.teamB)) : null; };
+
+  // 3. Garante que todos os 104 jogos existam na tela
+  K_DEF.forEach(def => {
+    if (!getM(def.id)) nextMatches.push({ id: def.id, teamA: "A Definir", teamB: "A Definir", phase: def.phase, date: def.date, result: null });
+  });
+
+  // 4. Injeta os times em tempo real, fase a fase
+  for(let i=0; i<16; i++) { const m = getM(`m_${73+i}`); if (m) { m.teamA = r32[i].tA; m.teamB = r32[i].tB; } }
+  for(let i=0; i<8; i++)  { const m = getM(`m_${89+i}`); if (m) { m.teamA = getW(`m_${73 + i*2}`) || `Vencedor J${73 + i*2}`; m.teamB = getW(`m_${74 + i*2}`) || `Vencedor J${74 + i*2}`; } }
+  for(let i=0; i<4; i++)  { const m = getM(`m_${97+i}`); if (m) { m.teamA = getW(`m_${89 + i*2}`) || `Vencedor J${89 + i*2}`; m.teamB = getW(`m_${90 + i*2}`) || `Vencedor J${90 + i*2}`; } }
+  for(let i=0; i<2; i++)  { const m = getM(`m_${101+i}`); if (m) { m.teamA = getW(`m_${97 + i*2}`) || `Vencedor J${97 + i*2}`; m.teamB = getW(`m_${98 + i*2}`) || `Vencedor J${98 + i*2}`; } }
+  
+  const m103 = getM("m_103"); if (m103) { m103.teamA = getL("m_101") || "Perdedor J101"; m103.teamB = getL("m_102") || "Perdedor J102"; }
+  const m104 = getM("m_104"); if (m104) { m104.teamA = getW("m_101") || "Vencedor J101"; m104.teamB = getW("m_102") || "Vencedor J102"; }
+
+  return nextMatches;
+}
+
+/* ── ABA 5: CONTROLE DE JOGOS E GERADORES AUTOMÁTICOS DA FIFA ── */
 function TabJogos({ matches, onChange, isAdmin }) {
   const [teamA, setTeamA] = useState(""); const [teamB, setTeamB] = useState(""); const [dateStr, setDateStr] = useState(""); const [phase, setPhase] = useState("Fase de Grupos"); const [editId, setEditId] = useState(null); const [tempR, setTempR] = useState({ a: "", b: "" }); const [filter, setFilter] = useState("todos");
 
   const add = () => { if (!teamA.trim() || !teamB.trim()) return; onChange([...matches, { id: uid(), teamA: teamA.trim(), teamB: teamB.trim(), phase, date: dateStr, result: null }]); setTeamA(""); setTeamB(""); setDateStr(""); };
 
-  const gerarCopaFaseDeGrupos = () => {
-    if (matches.some(m => m.phase === "Fase de Grupos")) return alert("⚠️ Os jogos da Fase de Grupos já foram gerados! Ação bloqueada para evitar duplicações.");
-    if (!window.confirm("Deseja gerar a grade oficial da Copa de 2026 com os horários de Brasília?")) return;
+  const gerarCopaCompleta = () => {
+    if (matches.length > 0) return alert("⚠️ A tabela já foi gerada! Apague o banco se quiser recomeçar.");
+    if (!window.confirm("Deseja gerar os 104 jogos da Copa de 2026 e ativar o Motor Automático?")) return;
     
     const SCHEDULE_OFICIAL = [
       { teamA: "México", teamB: "África do Sul", date: "11/06 (Qui) - 16:00" }, { teamA: "Coreia do Sul", teamB: "República Tcheca", date: "11/06 (Qui) - 23:00" },
@@ -623,83 +704,37 @@ function TabJogos({ matches, onChange, isAdmin }) {
       { teamA: "Suíça", teamB: "Canadá", date: "24/06 (Qua) - 16:00" }, { teamA: "Bósnia", teamB: "Catar", date: "24/06 (Qua) - 16:00" }, { teamA: "Escócia", teamB: "Brasil", date: "24/06 (Qua) - 19:00" }, { teamA: "Marrocos", teamB: "Haiti", date: "24/06 (Qua) - 19:00" }, { teamA: "República Tcheca", teamB: "México", date: "24/06 (Qua) - 22:00" }, { teamA: "África do Sul", teamB: "Coreia do Sul", date: "24/06 (Qua) - 22:00" },
       { teamA: "Equador", teamB: "Alemanha", date: "25/06 (Qui) - 17:00" }, { teamA: "Curaçao", teamB: "Costa do Marfim", date: "25/06 (Qui) - 17:00" }, { teamA: "Tunísia", teamB: "Holanda", date: "25/06 (Qui) - 20:00" }, { teamA: "Japão", teamB: "Suécia", date: "25/06 (Qui) - 20:00" }, { teamA: "Turquia", teamB: "Estados Unidos", date: "25/06 (Qui) - 23:00" }, { teamA: "Paraguai", teamB: "Austrália", date: "25/06 (Qui) - 23:00" },
       { teamA: "Noruega", teamB: "França", date: "26/06 (Sex) - 16:00" }, { teamA: "Senegal", teamB: "Iraque", date: "26/06 (Sex) - 16:00" }, { teamA: "Uruguai", teamB: "Espanha", date: "26/06 (Sex) - 21:00" }, { teamA: "Cabo Verde", teamB: "Arábia Saudita", date: "26/06 (Sex) - 21:00" },
-      { teamA: "Egito", teamB: "Irã", date: "26/06 (Sex) - 00:00" }, { teamA: "Nova Zelândia", teamB: "Bélgica", date: "26/06 (Sex) - 00:00" },
+      { teamA: "Egito", teamB: "Irã", date: "27/06 (Sáb) - 00:00" }, { teamA: "Nova Zelândia", teamB: "Bélgica", date: "27/06 (Sáb) - 00:00" },
       { teamA: "Panamá", teamB: "Inglaterra", date: "27/06 (Sáb) - 18:00" }, { teamA: "Croácia", teamB: "Gana", date: "27/06 (Sáb) - 18:00" }, { teamA: "Colômbia", teamB: "Portugal", date: "27/06 (Sáb) - 20:30" }, { teamA: "RD Congo", teamB: "Uzbequistão", date: "27/06 (Sáb) - 20:30" }, { teamA: "Jordânia", teamB: "Argentina", date: "27/06 (Sáb) - 23:00" }, { teamA: "Argélia", teamB: "Áustria", date: "27/06 (Sáb) - 23:00" }
     ];
-    const novosJogos = [...matches];
+    let novosJogos = [];
     SCHEDULE_OFICIAL.forEach(m => { novosJogos.push({ id: uid(), teamA: m.teamA, teamB: m.teamB, phase: "Fase de Grupos", date: m.date, result: null }); });
-    onChange(novosJogos);
-    alert("✅ Grade oficial de 72 partidas injetada no banco de dados!");
-  };
-
-  const gerarMataMata = () => {
-    const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result);
-    if (groupMatches.length < 72) if(!window.confirm("Atenção: Nem todos os 72 confrontos terminaram. O motor vai gerar a chave com os classificados atuais. Avançar?")) return;
-
-    const st = getGroupStandings(matches);
-    const firsts = {}, seconds = {};
-    let thirdsList = [];
-    Object.keys(st).forEach(g => { firsts[g] = st[g][0]; seconds[g] = st[g][1]; if(st[g][2]) thirdsList.push({ ...st[g][2], group: g }); });
-    thirdsList = thirdsList.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0).slice(0, 8);
-
-    const targets = ["A", "B", "D", "E", "G", "I", "K", "L"];
-    const allowed = { "A": ["C","E","F","H","I"], "B": ["E","F","G","I","J"], "D": ["B","E","F","I","J"], "E": ["A","B","C","D","F"], "G": ["A","E","H","I","J"], "I": ["C","D","F","G","H"], "K": ["D","E","I","J","L"], "L": ["E","H","I","J","K"] };
-    let bestAssign = null;
-    function solve(idx, current) {
-      if (bestAssign) return;
-      if (idx === targets.length) { bestAssign = { ...current }; return; }
-      const t = targets[idx];
-      for (let i = 0; i < thirdsList.length; i++) {
-        const th = thirdsList[i];
-        if (!Object.values(current).find(x => x.team === th.team) && (allowed[t].includes(th.group) || th.group !== t)) { current[t] = th; solve(idx + 1, current); delete current[t]; }
-      }
-    }
-    solve(0, {});
-    if (!bestAssign) {
-      bestAssign = {}; let available = [...thirdsList];
-      targets.forEach(t => { const foundIdx = available.findIndex(x => x.group !== t); if (foundIdx > -1) { bestAssign[t] = available[foundIdx]; available.splice(foundIdx, 1); } else { bestAssign[t] = available[0]; available.splice(0, 1); } });
-    }
-
-    const r32 = [
-      { tA: firsts["A"].team, tB: bestAssign["A"].team }, { tA: firsts["B"].team, tB: bestAssign["B"].team }, { tA: firsts["C"].team, tB: seconds["F"].team }, { tA: firsts["D"].team, tB: bestAssign["D"].team },
-      { tA: firsts["E"].team, tB: bestAssign["E"].team }, { tA: firsts["F"].team, tB: seconds["C"].team }, { tA: firsts["G"].team, tB: bestAssign["G"].team }, { tA: firsts["H"].team, tB: seconds["J"].team },
-      { tA: firsts["I"].team, tB: bestAssign["I"].team }, { tA: firsts["J"].team, tB: seconds["H"].team }, { tA: firsts["K"].team, tB: bestAssign["K"].team }, { tA: firsts["L"].team, tB: bestAssign["L"].team },
-      { tA: seconds["A"].team, tB: seconds["B"].team }, { tA: seconds["D"].team, tB: seconds["E"].team }, { tA: seconds["G"].team, tB: seconds["I"].team }, { tA: seconds["K"].team, tB: seconds["L"].team }
-    ];
-
-    const R32_DATES = [ "28/06 (Dom) - 16:00", "29/06 (Seg) - 14:00", "29/06 (Seg) - 17:30", "29/06 (Seg) - 22:00", "30/06 (Ter) - 14:00", "30/06 (Ter) - 18:00", "30/06 (Ter) - 22:00", "01/07 (Qua) - 13:00", "01/07 (Qua) - 17:00", "01/07 (Qua) - 21:00", "02/07 (Qui) - 16:00", "02/07 (Qui) - 20:00", "02/07 (Qui) - 00:00", "03/07 (Sex) - 15:00", "03/07 (Sex) - 19:00", "03/07 (Sex) - 22:30" ];
     
-    // 🛡️ Lógica de Atualização em vez de Duplicação
-    const jaExistem = matches.filter(m => m.phase === "32-avos de Final");
-    let novos = [...matches];
-
-    if (jaExistem.length === 16) {
-      // Apenas ATUALIZA os times mantendo o mesmo ID do Supabase
-      let r32Index = 0;
-      novos = novos.map(m => {
-        if (m.phase === "32-avos de Final") {
-          const atualizado = { ...m, teamA: r32[r32Index].tA, teamB: r32[r32Index].tB };
-          r32Index++;
-          return atualizado;
-        }
-        return m;
-      });
-      onChange(novos);
-      alert("🔄 Chaveamento ATUALIZADO com sucesso! (Nenhum jogo duplicado).");
-    } else {
-      // Limpa caso tenha ficado algum jogo quebrado e gera os 16 novos
-      novos = novos.filter(m => m.phase !== "32-avos de Final");
-      r32.forEach((m, index) => { 
-          novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: R32_DATES[index], result: null }); 
-      });
-      onChange(novos);
-      alert("🔥 Confrontos de eliminação direta (32-avos) gerados pela primeira vez!");
-    }
+    // Passa pelo motor reativo na primeira vez para criar as 32 chaves do mata-mata
+    novosJogos = processKnockout(novosJogos);
+    onChange(novosJogos);
+    alert("✅ Grade oficial de 104 partidas criada! O chaveamento agora é 100% automático.");
   };
 
   const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
-  const saveResult = (id) => { const a = parseInt(tempR.a), b = parseInt(tempR.b); if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) onChange(matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m))); setEditId(null); };
-  const clearResult = (id) => { onChange(matches.map((m) => (m.id === id ? { ...m, result: null } : m))); setEditId(null); };
+  
+  // ⚡ A MÁGICA ACONTECE AQUI: Toda vez que salva um placar, ele recalcula a árvore!
+  const saveResult = (id) => { 
+    const a = parseInt(tempR.a), b = parseInt(tempR.b); 
+    if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) {
+      let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m));
+      nextMatches = processKnockout(nextMatches);
+      onChange(nextMatches);
+    }
+    setEditId(null); 
+  };
+  
+  const clearResult = (id) => { 
+    let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: null } : m)); 
+    nextMatches = processKnockout(nextMatches);
+    onChange(nextMatches);
+    setEditId(null); 
+  };
 
   const filtered = applyFilter(matches, filter);
   const grouped = PHASES.map((ph) => ({ ph, ms: filtered.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
@@ -711,15 +746,15 @@ function TabJogos({ matches, onChange, isAdmin }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
             <h3 style={{ fontSize: 14, color: C.text }}>Mecanismo de Grade de Jogos</h3>
             <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-              <button onClick={gerarCopaFaseDeGrupos} style={BTN({ background: C.surface, color: C.text, border: `1px solid ${C.border}`, fontSize: 12, padding: "6px 12px", minHeight: 32 })}>1️⃣ Montar Grupos</button>
-              <button onClick={gerarMataMata} style={BTN({ background: C.gold, color: "#000", fontSize: 12, padding: "6px 12px", minHeight: 32 })}>⚡ Cruzar Chaves</button>
+              <button onClick={gerarCopaCompleta} style={BTN({ background: C.gold, color: "#000", border: `1px solid ${C.border}`, fontSize: 12, padding: "6px 12px", minHeight: 32 })}>⚡ Gerar Tabela Completa (104 Jogos)</button>
             </div>
           </div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>Dica: Se um jogo de mata-mata empatar, declare o placar final com 1 gol a mais para quem venceu nos pênaltis para que o Motor Reativo empurre a seleção correta para a próxima fase.</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 22px 1fr", gap: 8, alignItems: "center", marginBottom: 10 }}>
             <input value={teamA} onChange={(e) => setTeamA(e.target.value)} placeholder="Mandante" style={INP()} /><div style={{ textAlign: "center", color: C.muted, fontWeight: 900 }}>×</div><input value={teamB} onChange={(e) => setTeamB(e.target.value)} placeholder="Visitante" style={INP()} />
           </div>
-          <input value={dateStr} onChange={(e) => setDateStr(e.target.value)} placeholder="Data/Hora" style={INP({ marginBottom: 10 })} />
-          <div style={{ display: "flex", gap: 8 }}><select value={phase} onChange={(e) => setPhase(e.target.value)} style={INP({ flex: 1 })}>{PHASES.map((p) => <option key={p} value={p}>{p}</option>)}</select><button onClick={add} style={BTN()}>+ Jogo Manual</button></div>
+          <input value={dateStr} onChange={(e) => setDateStr(e.target.value)} placeholder="Data e Horário" style={INP({ marginBottom: 10 })} />
+          <div style={{ display: "flex", gap: 8 }}><select value={phase} onChange={(e) => setPhase(e.target.value)} style={INP({ flex: 1 })}>{PHASES.map((p) => <option key={p} value={p}>{p}</option>)}</select><button onClick={add} style={BTN()}>+ Adicionar</button></div>
         </div>
       )}
       {!isAdmin && <div style={{ marginBottom: 16, color: C.gold, fontSize: 13 }}>⚠️ Painel restrito. Apenas o administrador atualiza os resultados de campo.</div>}
