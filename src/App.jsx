@@ -475,10 +475,10 @@ function TabPlacar({ participants, matches, preds, championPts, prevPositions })
   const isMobile = useIsMobile();
   const [statsFor, setStatsFor] = useState(null);
   const ranked = getRanked(participants, matches, preds, championPts);
-  const total = participants.length * 100;
+  const total = participants.length * 50;
   const played = matches.filter(m => m.result).length;
   const medals = ["🥇", "🥈", "🥉"];
-  const prizes = [ { color: C.gold, pct: "70%", val: Math.round(total * 0.7) }, { color: C.silver, pct: "20%", val: Math.round(total * 0.2) }, { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) } ];
+  const prizes = [ { color: C.gold, pct: "60%", val: Math.round(total * 0.6) }, { color: C.silver, pct: "30%", val: Math.round(total * 0.3) }, { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) } ];
   const winner = getChampionWinner(matches);
 
   return (
@@ -1110,7 +1110,7 @@ export default function BolaoApp() {
             <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA 2026 {isAdmin && "<ADMIN>"}</div>
             {matches.length > 0 && <NextMatchCountdown matches={matches} />}
           </div>
-          <div style={{ marginLeft: "auto" }}><span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 11 : 13 }}>Caixa: R$ {(participants.length * 100).toLocaleString("pt-BR")}</span></div>
+          <div style={{ marginLeft: "auto" }}><span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 11 : 13 }}>Caixa: R$ {(participants.length * 50).toLocaleString("pt-BR")}</span></div>
         </div>
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
           {TABS.map((t) => <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 12 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>{isMobile ? t.label.split(" ")[0] : t.label}</button>)}
