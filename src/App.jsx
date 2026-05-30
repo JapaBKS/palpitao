@@ -144,7 +144,7 @@ function getRanked(participants, matches, preds, championPts = CHAMPION_PTS) {
       const brazilBonus = (brazilKnockoutPlayed && p.brazil_pick && p.brazil_pick === actualBrazilPhase) ? BRAZIL_PTS : 0;
       return { ...p, ...stats, total: stats.total + champBonus + viceBonus + thirdBonus + brazilBonus, champBonus, viceBonus, thirdBonus, brazilBonus };
     })
-    .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5);
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 }
 
 function parseMatchDate(dateStr) {
@@ -366,6 +366,7 @@ function StatsModal({ participant, matches, preds, onClose }) {
 }
 
 function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, matches }) {
+  const isMobile = useIsMobile();
   const activeUser = participants.find(p => p.id === activePid);
   const winner = getChampionWinner(matches);
   const vice = getViceWinner(matches);
@@ -393,11 +394,12 @@ function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, 
           </div>
         </div>
       </div>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
       {picks.map(pk => {
         const isCorrect = pk.hasResult && pk.value && pk.result && pk.value.toLowerCase().trim() === pk.result.toLowerCase().trim();
         const isWrong = pk.hasResult && pk.value && pk.result && !isCorrect;
         return (
-          <div key={pk.field} style={{ background: C.card, border: `1px solid ${isCorrect ? C.gold : isWrong ? C.red : C.border}44`, borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
+          <div key={pk.field} style={{ background: C.card, border: `1px solid ${isCorrect ? C.gold : isWrong ? C.red : C.border}44`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 18 }}>{pk.icon}</span>
               <div style={{ flex: 1 }}>
@@ -419,6 +421,7 @@ function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, 
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -432,7 +435,7 @@ function PostGameMural({ match, participants, preds }) {
   });
   return (
     <div style={{ marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
-      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: "4px 10px", display: "flex", alignItems: "center", gap: 4, fontWeight: 700, marginTop: 4 }}>
         <span style={{ fontSize: 9, display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}>▶</span>
         {open ? "Ocultar lista de palpites" : "Ver palpites de todos os participantes"}
       </button>
@@ -572,13 +575,13 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante cadastrado." />}
       <ScoringLegend />
       {ranked.length > 0 && (
-        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
+        <div className="card-hover" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
             <span style={{ fontSize: 10, color: C.muted }}>POS</span><span style={{ fontSize: 10, color: C.muted }}>NOME (Clique para abrir estatísticas)</span><span style={{ fontSize: 10, color: C.muted, textAlign: "right" }}>PONTOS</span>
             {!isMobile && <><span style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>10</span><span style={{ fontSize: 10, color: C.green, textAlign: "center" }}>7</span><span style={{ fontSize: 10, color: C.blue, textAlign: "center" }}>5</span></>}
           </div>
           {ranked.map((p, i) => (
-            <div key={p.id} onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent", cursor: "pointer" }}>
+            <div key={p.id} className="row-hover" onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent", cursor: "pointer" }}>
               <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? (isMobile ? 17 : 20) : 13, color: i >= 3 ? C.muted : undefined }}>{i < 3 ? medals[i] : `${i + 1}º`}</span>
               <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14 }}>{p.name}</span>
@@ -980,7 +983,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{participants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{participants.map((p) => (<button key={p.id} onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 20, padding: "6px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
+        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{participants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{participants.map((p) => (<button key={p.id} className="pill-hover" onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 24, padding: "8px 18px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minHeight: 40 }}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
       </div>
       {!isUnlocked ? (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "30px 20px", textAlign: "center", marginTop: 40 }}>
@@ -1003,7 +1006,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                 const locked = isLocked(m.date);
                 const closingSoon = !locked && isClosingSoon(m.date);
                 return (
-                  <div key={m.id} style={{ background: C.card, border: `1px solid ${closingSoon ? C.gold + "66" : locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+                  <div key={m.id} className="match-card" style={{ background: C.card, border: `1px solid ${closingSoon ? C.gold + "66" : locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
                     {m.date && <span style={{ fontSize: 11, color: locked ? C.red : closingSoon ? C.gold : C.greenDim, fontWeight: 700 }}>{m.date}{locked ? " (Tempo Esgotado)" : closingSoon ? " ⚠️ Fecha em breve!" : ""}</span>}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamA}</span>
@@ -1157,7 +1160,15 @@ export default function BolaoApp() {
     setToast({ message: msg, type });
   };
 
-  const TABS = [ { id: "placar", label: "🏆 Placar" }, { id: "palpites", label: "📋 Palpites" }, { id: "tabelas", label: "📊 Tabelas" }, { id: "chaveamento", label: "🌳 Chaveamento" }, { id: "visao", label: "👁️ Auditoria" }, { id: "jogos", label: "⚽ Painel Jogos" }, { id: "participantes", label: "👥 Jogadores" } ];
+  const TABS = [
+    { id: "placar", label: "🏆 Placar" },
+    { id: "palpites", label: "📋 Palpites" },
+    { id: "tabelas", label: "📊 Tabelas" },
+    { id: "chaveamento", label: "🌳 Chaveamento" },
+    { id: "visao", label: "👁️ Auditoria" },
+    { id: "participantes", label: "👥 Jogadores" },
+    ...(isAdmin ? [{ id: "jogos", label: "⚽ Painel Jogos" }] : []),
+  ];
 
   if (!ready) return <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontFamily: "sans-serif", fontSize: 18, fontWeight: 700 }}>⚽ Sincronizando tabelas com o Supabase...</div>;
 
@@ -1170,6 +1181,16 @@ export default function BolaoApp() {
         ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
         @keyframes badgePop { 0% { transform: scale(0.3) rotate(-10deg); opacity: 0; } 65% { transform: scale(1.18) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
         @keyframes badgeGlow { 0%,100% { box-shadow: 0 0 0px transparent; } 50% { box-shadow: 0 0 16px #ffca2866, 0 0 6px #ffca2844; } }
+        .row-hover:hover { background: ${C.surface} !important; cursor: pointer; }
+        .card-hover:hover { border-color: ${C.border} !important; }
+        .tab-btn:hover { color: ${C.green} !important; }
+        .match-card:hover { border-color: ${C.greenDim}88 !important; }
+        input:focus, select:focus { border-color: #00a152 !important; box-shadow: 0 0 0 2px #00a15222 !important; outline: none; }
+        button, a, select, input { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%234a6a5a' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px !important; }
+        button { transition: opacity 0.15s, filter 0.15s; }
+        .btn-primary:hover { filter: brightness(1.1); }
+        .pill-hover:hover { opacity: 0.85; }
       `}</style>
       <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -1177,13 +1198,13 @@ export default function BolaoApp() {
             <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA 2026 {isAdmin && "<ADMIN>"}</div>
             {matches.length > 0 && <NextMatchCountdown matches={matches} />}
           </div>
-          <div style={{ marginLeft: "auto" }}><span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 11 : 13 }}>Caixa: R$ {(participants.length * 50).toLocaleString("pt-BR")}</span></div>
+          <div style={{ marginLeft: "auto" }}><span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14 }}>Caixa: R$ {(participants.length * 50).toLocaleString("pt-BR")}</span></div>
         </div>
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
-          {TABS.map((t) => <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 12 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>{isMobile ? t.label.split(" ")[0] : t.label}</button>)}
+          {TABS.map((t) => <button key={t.id} className="tab-btn" onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 12 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>{isMobile ? t.label.split(" ")[0] : t.label}</button>)}
         </div>
       </div>
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
         {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} prevPositions={prevPositions} />}
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
