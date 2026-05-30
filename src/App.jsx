@@ -1179,7 +1179,7 @@ export default function BolaoApp() {
         .match-card:hover { border-color: ${C.greenDim}88 !important; }
         input:focus, select:focus { border-color: #00a152 !important; box-shadow: 0 0 0 2px #00a15222 !important; outline: none; }
         button, a, select, input { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-        select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%234a6a5a' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px !important; }
+        select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%234a6a5a' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") !important; background-repeat: no-repeat !important; background-position: right 12px center !important; padding-right: 36px !important; }
         button { transition: opacity 0.15s, filter 0.15s; }
         .btn-primary:hover { filter: brightness(1.1); }
         .pill-hover:hover { opacity: 0.85; }
