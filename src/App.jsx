@@ -690,7 +690,7 @@ function TabChaveamento({ matches }) {
 }
 
 function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
-  const [name, setName] = useState(""); const [pin, setPin] = useState(""); const [editingId, setEditingId] = useState(null); const [editName, setEditName] = useState(""); const [editPin, setEditPin] = useState("");
+  const [name, setName] = useState(""); const [pin, setPin] = useState(""); const [editingId, setEditingId] = useState(null); const [editName, setEditName] = useState(""); const [editPin, setEditPin] = useState(""); const [authingId, setAuthingId] = useState(null); const [authPin, setAuthPin] = useState(""); const [authError, setAuthError] = useState("");
 
   const add = () => {
     if (!name.trim()) return alert("Por favor, digite seu nome!");
@@ -701,11 +701,17 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   };
 
   const startEdit = (p) => {
-    if (!isAdmin) {
-      const authPin = window.prompt(`🔒 Digite a senha atual de ${p.name} para liberar a edição de cadastro:`);
-      if (authPin === null) return;
-      if (authPin !== p.pin) return alert("❌ Senha incorreta!");
+    if (isAdmin) {
+      setEditingId(p.id); setEditName(p.name); setEditPin("");
+    } else {
+      setAuthingId(p.id); setAuthPin(""); setAuthError("");
     }
+  };
+
+  const confirmAuth = () => {
+    const p = participants.find(x => x.id === authingId);
+    if (authPin !== p.pin) { setAuthError("Senha incorreta. Tente novamente."); return; }
+    setAuthingId(null);
     setEditingId(p.id); setEditName(p.name); setEditPin("");
   };
 
@@ -717,8 +723,54 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
     setEditingId(null);
   };
 
+  const editingParticipant = participants.find(p => p.id === editingId);
+  const authingParticipant = participants.find(p => p.id === authingId);
+
   return (
     <div>
+      {authingParticipant && (
+        <div onClick={() => setAuthingId(null)} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 360 }}>
+            <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>🔒 Verificar Identidade</div>
+              <button onClick={() => setAuthingId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22 }}>×</button>
+            </div>
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontSize: 13, color: C.muted }}>Digite a senha atual de <span style={{ color: C.text, fontWeight: 700 }}>{authingParticipant.name}</span> para liberar a edição.</div>
+              <input type="password" value={authPin} onChange={e => { setAuthPin(e.target.value); setAuthError(""); }} onKeyDown={e => e.key === "Enter" && confirmAuth()} placeholder="••••" style={INP({ textAlign: "center", letterSpacing: 4 })} autoFocus />
+              {authError && <div style={{ fontSize: 12, color: C.red, fontWeight: 700 }}>❌ {authError}</div>}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={confirmAuth} style={BTN({ flex: 1 })}>Confirmar</button>
+                <button onClick={() => setAuthingId(null)} style={GHOST_BTN({ flex: 1 })}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {editingParticipant && (
+        <div onClick={() => setEditingId(null)} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 380 }}>
+            <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>✏️ Editar Cadastro</div>
+              <button onClick={() => setEditingId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22 }}>×</button>
+            </div>
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOME</label>
+                <input value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEdit(editingId)} style={INP()} autoFocus />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOVA SENHA <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— deixe em branco para manter</span></label>
+                <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="••••" onKeyDown={e => e.key === "Enter" && saveEdit(editingId)} style={INP({ textAlign: "center", letterSpacing: 4 })} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => saveEdit(editingId)} style={BTN({ flex: 1 })}>✓ Salvar</button>
+                <button onClick={() => setEditingId(null)} style={GHOST_BTN({ flex: 1 })}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <h3 style={{ marginBottom: 12, color: C.text, fontSize: 16 }}>{isAdmin ? "⚙️ Adicionar Jogador Manualmente (Admin)" : "👋 Novo por aqui? Cadastre-se no Bolão"}</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -728,35 +780,18 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
         </div>
       </div>
       {participants.map((p) => (
-        <div key={p.id} style={{ background: C.card, border: `1px solid ${editingId === p.id ? C.green + "66" : C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8, transition: "border-color .15s" }}>
-          {editingId === p.id ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOME</label>
-                <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ padding: "10px 12px" })} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOVA SENHA <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— deixe em branco para manter a atual</span></label>
-                <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="••••" style={INP({ padding: "10px 12px", textAlign: "center", letterSpacing: 4 })} />
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => saveEdit(p.id)} style={BTN({ flex: 1 })}>✓ Salvar</button>
-                <button onClick={() => setEditingId(null)} style={GHOST_BTN({ flex: 1 })}>Cancelar</button>
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ flex: 1, fontWeight: 700, minWidth: 80, color: C.text }}>{p.name}</span>
-              <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Inscrição Paga" : "❌ Pix Pendente"}</span>
-              <button onClick={() => startEdit(p)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>✏️ Editar</button>
-              {isAdmin && (
-                <>
-                  <button onClick={() => onChange(participants.map(x => x.id === p.id ? { ...x, paid: !x.paid } : x))} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36, borderColor: C.gold, color: C.gold })}>Aprovar Pix</button>
-                  <button onClick={() => { if(window.confirm(`Deseja apagar permanentemente o cadastro de ${p.name}?`)) onDelete(p.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 24, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-                </>
-              )}
-            </div>
-          )}
+        <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ flex: 1, fontWeight: 700, minWidth: 80, color: C.text }}>{p.name}</span>
+            <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Inscrição Paga" : "❌ Pix Pendente"}</span>
+            <button onClick={() => startEdit(p)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>✏️ Editar</button>
+            {isAdmin && (
+              <>
+                <button onClick={() => onChange(participants.map(x => x.id === p.id ? { ...x, paid: !x.paid } : x))} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36, borderColor: C.gold, color: C.gold })}>Aprovar Pix</button>
+                <button onClick={() => { if(window.confirm(`Deseja apagar permanentemente o cadastro de ${p.name}?`)) onDelete(p.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 24, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              </>
+            )}
+          </div>
         </div>
       ))}
     </div>
