@@ -124,7 +124,12 @@ function getBrazilPhase(matches) {
   return "Fase de Grupos";
 }
 
-function getRanked(participants, matches, preds, championPts = 20) {
+const CHAMPION_PTS = 40;
+const VICE_PTS = 20;
+const THIRD_PTS = 10;
+const BRAZIL_PTS = 20;
+
+function getRanked(participants, matches, preds, championPts = CHAMPION_PTS) {
   const winner = getChampionWinner(matches);
   const vice = getViceWinner(matches);
   const third = getThirdWinner(matches);
@@ -134,9 +139,9 @@ function getRanked(participants, matches, preds, championPts = 20) {
     .map(p => {
       const stats = getStats(p.id, matches, preds);
       const champBonus = (winner && p.champion_pick && p.champion_pick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
-      const viceBonus = (vice && p.vice_pick && p.vice_pick.toLowerCase().trim() === vice.toLowerCase().trim()) ? 10 : 0;
-      const thirdBonus = (third && p.third_pick && p.third_pick.toLowerCase().trim() === third.toLowerCase().trim()) ? 10 : 0;
-      const brazilBonus = (brazilKnockoutPlayed && p.brazil_pick && p.brazil_pick === actualBrazilPhase) ? 15 : 0;
+      const viceBonus = (vice && p.vice_pick && p.vice_pick.toLowerCase().trim() === vice.toLowerCase().trim()) ? VICE_PTS : 0;
+      const thirdBonus = (third && p.third_pick && p.third_pick.toLowerCase().trim() === third.toLowerCase().trim()) ? THIRD_PTS : 0;
+      const brazilBonus = (brazilKnockoutPlayed && p.brazil_pick && p.brazil_pick === actualBrazilPhase) ? BRAZIL_PTS : 0;
       return { ...p, ...stats, total: stats.total + champBonus + viceBonus + thirdBonus + brazilBonus, champBonus, viceBonus, thirdBonus, brazilBonus };
     })
     .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5);
@@ -240,7 +245,7 @@ function NextMatchCountdown({ matches }) {
 }
 
 /* ── Modais e Secoes ── */
-function StatsModal({ participant, matches, preds, onClose, championPts }) {
+function StatsModal({ participant, matches, preds, onClose }) {
   const stats = getDetailedStats(participant.id, matches, preds);
   const winner = getChampionWinner(matches);
   const vice = getViceWinner(matches);
@@ -248,10 +253,10 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   const actualBrazilPhase = getBrazilPhase(matches);
   const brazilKnockoutPlayed = matches.some(m => m.phase !== "Fase de Grupos" && m.result && (m.teamA === "Brasil" || m.teamB === "Brasil"));
   const champPick = participant.champion_pick || "";
-  const champBonus = (winner && champPick && champPick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
-  const viceBonus = (vice && participant.vice_pick && participant.vice_pick.toLowerCase().trim() === vice.toLowerCase().trim()) ? 10 : 0;
-  const thirdBonus = (third && participant.third_pick && participant.third_pick.toLowerCase().trim() === third.toLowerCase().trim()) ? 10 : 0;
-  const brazilBonus = (brazilKnockoutPlayed && participant.brazil_pick && participant.brazil_pick === actualBrazilPhase) ? 15 : 0;
+  const champBonus = (winner && champPick && champPick.toLowerCase().trim() === winner.toLowerCase().trim()) ? CHAMPION_PTS : 0;
+  const viceBonus = (vice && participant.vice_pick && participant.vice_pick.toLowerCase().trim() === vice.toLowerCase().trim()) ? VICE_PTS : 0;
+  const thirdBonus = (third && participant.third_pick && participant.third_pick.toLowerCase().trim() === third.toLowerCase().trim()) ? THIRD_PTS : 0;
+  const brazilBonus = (brazilKnockoutPlayed && participant.brazil_pick && participant.brazil_pick === actualBrazilPhase) ? BRAZIL_PTS : 0;
   const totalWithChamp = stats.total + champBonus + viceBonus + thirdBonus + brazilBonus;
   const bars = [
     { label: "Exato",     pts: 10, count: stats.c10, color: C.gold   },
@@ -360,7 +365,7 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   );
 }
 
-function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, championPts, onSetChampionPts, matches }) {
+function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, matches }) {
   const activeUser = participants.find(p => p.id === activePid);
   const winner = getChampionWinner(matches);
   const vice = getViceWinner(matches);
@@ -371,10 +376,10 @@ function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, 
   const locked = isAdmin ? false : matches.some(m => m.phase === "Fase de Grupos" && m.result != null);
 
   const picks = [
-    { icon: "🏆", label: "Campeão", pts: championPts, value: activeUser?.champion_pick || "", field: "champion_pick", options: ALL_TEAMS, result: winner, hasResult: !!winner },
-    { icon: "🥈", label: "Vice-Campeão", pts: 10, value: activeUser?.vice_pick || "", field: "vice_pick", options: ALL_TEAMS, result: vice, hasResult: !!vice },
-    { icon: "🥉", label: "3º Lugar", pts: 10, value: activeUser?.third_pick || "", field: "third_pick", options: ALL_TEAMS, result: third, hasResult: !!third },
-    { icon: "🇧🇷", label: "Até onde o Brasil vai?", pts: 15, value: activeUser?.brazil_pick || "", field: "brazil_pick", options: BRAZIL_PHASES, result: brazilKnockoutPlayed ? actualBrazilPhase : null, hasResult: brazilKnockoutPlayed },
+    { icon: "🏆", label: "Campeão", pts: CHAMPION_PTS, value: activeUser?.champion_pick || "", field: "champion_pick", options: ALL_TEAMS, result: winner, hasResult: !!winner },
+    { icon: "🥈", label: "Vice-Campeão", pts: VICE_PTS, value: activeUser?.vice_pick || "", field: "vice_pick", options: ALL_TEAMS, result: vice, hasResult: !!vice },
+    { icon: "🥉", label: "3º Lugar", pts: THIRD_PTS, value: activeUser?.third_pick || "", field: "third_pick", options: ALL_TEAMS, result: third, hasResult: !!third },
+    { icon: "🇧🇷", label: "Até onde o Brasil vai?", pts: BRAZIL_PTS, value: activeUser?.brazil_pick || "", field: "brazil_pick", options: BRAZIL_PHASES, result: brazilKnockoutPlayed ? actualBrazilPhase : null, hasResult: brazilKnockoutPlayed },
   ];
 
   return (
@@ -387,16 +392,6 @@ function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, 
             <div style={{ fontSize: 11, color: C.muted }}>{locked ? "🔒 Encerrado — primeiro jogo da fase de grupos já iniciou" : "🔓 Disponível até o 1º jogo da fase de grupos"}</div>
           </div>
         </div>
-        {isAdmin && (
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {[15, 20, 30].map(v => (
-              <button key={v} onClick={() => onSetChampionPts(v)}
-                style={{ ...GHOST_BTN({}), background: championPts === v ? `${C.gold}22` : "none", color: championPts === v ? C.gold : C.muted, borderColor: championPts === v ? `${C.gold}66` : C.border, minHeight: 28, padding: "3px 10px", fontSize: 11 }}>
-                {v}pts 🏆
-              </button>
-            ))}
-          </div>
-        )}
       </div>
       {picks.map(pk => {
         const isCorrect = pk.hasResult && pk.value && pk.result && pk.value.toLowerCase().trim() === pk.result.toLowerCase().trim();
@@ -547,10 +542,10 @@ function FilterBar({ active, onChange, matches }) {
 }
 
 /* ── Abas Principais ── */
-function TabPlacar({ participants, matches, preds, championPts, prevPositions }) {
+function TabPlacar({ participants, matches, preds, prevPositions }) {
   const isMobile = useIsMobile();
   const [statsFor, setStatsFor] = useState(null);
-  const ranked = getRanked(participants, matches, preds, championPts);
+  const ranked = getRanked(participants, matches, preds);
   const total = participants.length * 50;
   const played = matches.filter(m => m.result).length;
   const medals = ["🥇", "🥈", "🥉"];
@@ -598,7 +593,7 @@ function TabPlacar({ participants, matches, preds, championPts, prevPositions })
           ))}
         </div>
       )}
-      {statsFor && <StatsModal participant={statsFor} matches={matches} preds={preds} onClose={() => setStatsFor(null)} championPts={championPts} />}
+      {statsFor && <StatsModal participant={statsFor} matches={matches} preds={preds} onClose={() => setStatsFor(null)} />}
     </div>
   );
 }
@@ -954,7 +949,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
   );
 }
 
-function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickSpecial, championPts, onSetChampionPts }) {
+function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickSpecial }) {
   const isMobile = useIsMobile(); const [selPid, setSelPid] = useState(""); const [pinInput, setPinInput] = useState(""); const [filter, setFilter] = useState("hoje");
   const activePid = participants.find((p) => p.id === selPid)?.id || participants[0]?.id || "";
   const activeUser = participants.find((p) => p.id === activePid);
@@ -995,7 +990,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
       ) : (
         <>
           {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{pendingCount > 0 && <span style={{ marginLeft: "auto", background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}
-          <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} championPts={championPts} onSetChampionPts={onSetChampionPts} />
+          <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
           {grouped.length === 0 && <Empty icon="📅" msg="Nenhuma partida agendada neste filtro." />}
           {isFallback && <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, padding: "8px 12px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8 }}>📅 Sem jogos hoje — mostrando os próximos a acontecer</div>}
@@ -1030,9 +1025,9 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   );
 }
 
-function TabVisao({ participants, matches, preds, championPts }) {
+function TabVisao({ participants, matches, preds }) {
   if (participants.length === 0) return <Empty icon="👥" msg="Aguardando participantes." />;
-  const ranked = getRanked(participants, matches, preds, championPts);
+  const ranked = getRanked(participants, matches, preds);
   const played = matches.filter((m) => m.result);
   if (played.length === 0) return <Empty icon="⏳" msg="Nenhum jogo finalizado para auditoria geral." />;
 
@@ -1077,11 +1072,10 @@ export default function BolaoApp() {
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionUnlocked, setSessionUnlocked] = useState({});
-  const [championPts, setChampionPts] = useState(20);
   const [toast, setToast] = useState(null);
   const [prevPositions, setPrevPositions] = useState({});
-  const stateRef = useRef({ matches: [], participants: [], preds: {}, championPts: 20 });
-  useEffect(() => { stateRef.current = { matches, participants, preds, championPts }; });
+  const stateRef = useRef({ matches: [], participants: [], preds: {} });
+  useEffect(() => { stateRef.current = { matches, participants, preds }; });
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [tab]);
 
@@ -1100,8 +1094,6 @@ export default function BolaoApp() {
           dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b }; });
           setPreds(objPreds);
         }
-        const { data: cfg } = await supabase.from('config').select('valor').eq('chave', 'champion_pts').single();
-        if (cfg?.valor) setChampionPts(parseInt(cfg.valor));
       } catch (err) { console.error("Erro na leitura das tabelas do Supabase:", err); }
       setReady(true);
     })();
@@ -1115,10 +1107,10 @@ export default function BolaoApp() {
         if (data) setParticipants(data);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
-        const { participants: p, preds: pr, championPts: cp, matches: prevM } = stateRef.current;
+        const { participants: p, preds: pr, matches: prevM } = stateRef.current;
         const { data } = await supabase.from('jogos').select('*');
         if (data) {
-          setPrevPositions(getRanked(p, prevM, pr, cp).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
+          setPrevPositions(getRanked(p, prevM, pr).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
           setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
         }
       })
@@ -1134,7 +1126,7 @@ export default function BolaoApp() {
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
     const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result); });
-    if (changed.length > 0) setPrevPositions(getRanked(participants, matches, preds, championPts).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
+    if (changed.length > 0) setPrevPositions(getRanked(participants, matches, preds).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
     setMatches(d);
     if (changed.length === 0) { console.warn("sm: nenhuma mudança detectada, upsert ignorado"); return; }
     const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
@@ -1153,7 +1145,6 @@ export default function BolaoApp() {
 
   const savePin = async (userId, pin) => { setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x)); await supabase.from('participantes').update({ pin }).eq('id', userId); };
   const onPickSpecial = async (pid, field, value) => { const updated = participants.map(p => p.id === pid ? { ...p, [field]: value } : p); setParticipants(updated); const { error } = await supabase.from('participantes').update({ [field]: value }).eq('id', pid); if (error) showToast("❌ Erro ao salvar — rode o SQL de migração no Supabase!", "error"); };
-  const onSetChampionPts = async (pts) => { setChampionPts(pts); await supabase.from('config').upsert({ chave: 'champion_pts', valor: String(pts) }); };
 
   const handleAdminLogin = () => {
     if (isAdmin) { setIsAdmin(false); return; }
@@ -1193,13 +1184,13 @@ export default function BolaoApp() {
         </div>
       </div>
       <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
-        {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} championPts={championPts} prevPositions={prevPositions} />}
+        {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} prevPositions={prevPositions} />}
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
         {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
-        {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} championPts={championPts} onSetChampionPts={onSetChampionPts} />}
-        {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} championPts={championPts} />}
+        {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />}
+        {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} />}
       </div>
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </div>
