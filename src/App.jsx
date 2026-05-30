@@ -508,8 +508,11 @@ function TabTabelas({ matches }) {
   );
 }
 
+/* ── ABA 3: ÁRVORE GRÁFICA DO CHAVEAMENTO DO MATA-MATA ── */
 function TabChaveamento({ matches }) {
-  const columns = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "Final"];
+  // A correção foi adicionar o "3º Lugar" antes da "Final" neste array:
+  const columns = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
+  
   return (
     <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
       <div style={{ display: "flex", gap: 24, minWidth: "max-content", padding: "10px 0" }}>
@@ -517,14 +520,28 @@ function TabChaveamento({ matches }) {
           const ms = matches.filter(m => m.phase === ph);
           return (
             <div key={ph} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 240, justifyContent: "space-around" }}>
-              <div style={{ textAlign: "center", color: C.gold, fontWeight: 900, marginBottom: 8, fontSize: 13, background: C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${C.border}` }}>{ph.toUpperCase()}</div>
-              {ms.length === 0 ? <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>Aguardando definições...</div> : ms.map(m => (
-                <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
-                  {m.date && <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, marginBottom: -2 }}>{m.date}</div>}
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.a > m.result.b ? C.green : C.text }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamA}</span><span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.a > m.result.b ? C.green : C.gold }}>{m.result ? m.result.a : "-"}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.b > m.result.a ? C.green : C.text }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamB}</span><span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.b > m.result.a ? C.green : C.gold }}>{m.result ? m.result.b : "-"}</span></div>
+              <div style={{ textAlign: "center", color: C.gold, fontWeight: 900, marginBottom: 8, fontSize: 13, background: C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${C.border}` }}>
+                {ph.toUpperCase()}
+              </div>
+              {ms.length === 0 ? (
+                <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>
+                  Aguardando definições...
                 </div>
-              ))}
+              ) : (
+                ms.map(m => (
+                  <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    {m.date && <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, marginBottom: -2 }}>{m.date}</div>}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.a > m.result.b ? C.green : C.text }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamA}</span>
+                      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.a > m.result.b ? C.green : C.gold }}>{m.result ? m.result.a : "-"}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.b > m.result.a ? C.green : C.text }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamB}</span>
+                      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.b > m.result.a ? C.green : C.gold }}>{m.result ? m.result.b : "-"}</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           );
         })}
