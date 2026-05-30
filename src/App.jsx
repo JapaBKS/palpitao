@@ -97,13 +97,47 @@ function getChampionWinner(matches) {
   return null;
 }
 
+function getViceWinner(matches) {
+  const final = matches.find(m => m.phase === "Final" && m.result);
+  if (!final) return null;
+  if (final.result.a > final.result.b) return final.teamB;
+  if (final.result.b > final.result.a) return final.teamA;
+  return null;
+}
+
+function getThirdWinner(matches) {
+  const m = matches.find(mm => mm.phase === "3º Lugar" && mm.result);
+  if (!m) return null;
+  return m.result.a >= m.result.b ? m.teamA : m.teamB;
+}
+
+const BRAZIL_PHASES = ["Fase de Grupos", "32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Vice", "Campeão"];
+
+function getBrazilPhase(matches) {
+  const champion = getChampionWinner(matches);
+  if (champion === "Brasil") return "Campeão";
+  const finalM = matches.find(m => m.phase === "Final" && m.result);
+  if (finalM && (finalM.teamA === "Brasil" || finalM.teamB === "Brasil")) return "Vice";
+  for (const phase of ["3º Lugar", "Semifinal", "Quartas de Final", "Oitavas de Final", "32-avos de Final"]) {
+    if (matches.find(m => m.phase === phase && m.result && (m.teamA === "Brasil" || m.teamB === "Brasil"))) return phase;
+  }
+  return "Fase de Grupos";
+}
+
 function getRanked(participants, matches, preds, championPts = 20) {
   const winner = getChampionWinner(matches);
+  const vice = getViceWinner(matches);
+  const third = getThirdWinner(matches);
+  const actualBrazilPhase = getBrazilPhase(matches);
+  const brazilKnockoutPlayed = matches.some(m => m.phase !== "Fase de Grupos" && m.result && (m.teamA === "Brasil" || m.teamB === "Brasil"));
   return [...participants]
     .map(p => {
       const stats = getStats(p.id, matches, preds);
       const champBonus = (winner && p.champion_pick && p.champion_pick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
-      return { ...p, ...stats, total: stats.total + champBonus, champBonus };
+      const viceBonus = (vice && p.vice_pick && p.vice_pick.toLowerCase().trim() === vice.toLowerCase().trim()) ? 10 : 0;
+      const thirdBonus = (third && p.third_pick && p.third_pick.toLowerCase().trim() === third.toLowerCase().trim()) ? 10 : 0;
+      const brazilBonus = (brazilKnockoutPlayed && p.brazil_pick && p.brazil_pick === actualBrazilPhase) ? 15 : 0;
+      return { ...p, ...stats, total: stats.total + champBonus + viceBonus + thirdBonus + brazilBonus, champBonus, viceBonus, thirdBonus, brazilBonus };
     })
     .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5);
 }
@@ -209,9 +243,16 @@ function NextMatchCountdown({ matches }) {
 function StatsModal({ participant, matches, preds, onClose, championPts }) {
   const stats = getDetailedStats(participant.id, matches, preds);
   const winner = getChampionWinner(matches);
+  const vice = getViceWinner(matches);
+  const third = getThirdWinner(matches);
+  const actualBrazilPhase = getBrazilPhase(matches);
+  const brazilKnockoutPlayed = matches.some(m => m.phase !== "Fase de Grupos" && m.result && (m.teamA === "Brasil" || m.teamB === "Brasil"));
   const champPick = participant.champion_pick || "";
   const champBonus = (winner && champPick && champPick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
-  const totalWithChamp = stats.total + champBonus;
+  const viceBonus = (vice && participant.vice_pick && participant.vice_pick.toLowerCase().trim() === vice.toLowerCase().trim()) ? 10 : 0;
+  const thirdBonus = (third && participant.third_pick && participant.third_pick.toLowerCase().trim() === third.toLowerCase().trim()) ? 10 : 0;
+  const brazilBonus = (brazilKnockoutPlayed && participant.brazil_pick && participant.brazil_pick === actualBrazilPhase) ? 15 : 0;
+  const totalWithChamp = stats.total + champBonus + viceBonus + thirdBonus + brazilBonus;
   const bars = [
     { label: "Exato",     pts: 10, count: stats.c10, color: C.gold   },
     { label: "Tend+Gol",  pts:  7, count: stats.c7,  color: C.green  },
@@ -246,6 +287,9 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 48, color: C.gold, lineHeight: 1 }}>{totalWithChamp}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span>
           {champBonus > 0 && <span style={{ fontSize: 12, background: `${C.gold}22`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "2px 8px" }}>+{champBonus} campeão 🏆</span>}
+          {viceBonus > 0 && <span style={{ fontSize: 12, background: `${C.silver}22`, color: C.silver, border: `1px solid ${C.silver}44`, borderRadius: 10, padding: "2px 8px" }}>+{viceBonus} vice 🥈</span>}
+          {thirdBonus > 0 && <span style={{ fontSize: 12, background: `${C.bronze}22`, color: C.bronze, border: `1px solid ${C.bronze}44`, borderRadius: 10, padding: "2px 8px" }}>+{thirdBonus} 3º lugar 🥉</span>}
+          {brazilBonus > 0 && <span style={{ fontSize: 12, background: "#009c3b22", color: "#009c3b", border: "1px solid #009c3b44", borderRadius: 10, padding: "2px 8px" }}>+{brazilBonus} Brasil 🇧🇷</span>}
         </div>
         {badges.length > 0 && (
           <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
@@ -291,63 +335,97 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
               <div style={{ fontSize: 10, color: C.red, fontWeight: 700, marginBottom: 4 }}>💔 PIOR JOGO</div><div style={{ fontSize: 13 }}>{stats.worstMatch.teamA} × {stats.worstMatch.teamB}</div><div style={{ fontSize: 12, color: C.muted }}>Palpite: {preds[participant.id]?.[stats.worstMatch.id]?.a}×{preds[participant.id]?.[stats.worstMatch.id]?.b} · 0pts</div>
             </div>
           )}
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 22 }}>🏆</span>
-            <div><div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>Palpite de Campeão</div><div style={{ fontSize: 14, fontWeight: 700, color: champBonus > 0 ? C.gold : C.text }}>{champPick || <span style={{ color: C.muted, fontStyle: "italic" }}>Não definido</span>}{champBonus > 0 && " ✅"}{winner && champPick && champBonus === 0 && " ❌"}</div></div>
-          </div>
+          {[
+            { icon: "🏆", label: "Campeão", pick: champPick, bonus: champBonus, result: winner, hasResult: !!winner },
+            { icon: "🥈", label: "Vice-Campeão", pick: participant.vice_pick || "", bonus: viceBonus, result: vice, hasResult: !!vice },
+            { icon: "🥉", label: "3º Lugar", pick: participant.third_pick || "", bonus: thirdBonus, result: third, hasResult: !!third },
+            { icon: "🇧🇷", label: "Brasil até onde?", pick: participant.brazil_pick || "", bonus: brazilBonus, result: brazilKnockoutPlayed ? actualBrazilPhase : null, hasResult: brazilKnockoutPlayed },
+          ].map(pk => (
+            <div key={pk.label} style={{ background: C.card, border: `1px solid ${pk.bonus > 0 ? C.gold : C.border}33`, borderRadius: 8, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 20 }}>{pk.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>{pk.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: pk.bonus > 0 ? C.gold : C.text }}>
+                  {pk.pick || <span style={{ color: C.muted, fontStyle: "italic", fontWeight: 400 }}>Não definido</span>}
+                  {pk.bonus > 0 && " ✅"}
+                  {pk.hasResult && pk.pick && pk.bonus === 0 && <span style={{ color: C.red }}> ❌</span>}
+                </div>
+              </div>
+              {pk.hasResult && <div style={{ fontSize: 11, color: C.muted, textAlign: "right" }}>Resultado:<br /><span style={{ color: C.text, fontWeight: 700 }}>{pk.result}</span></div>}
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-function ChampionSection({ activePid, participants, isAdmin, onPickChampion, championPts, onSetChampionPts, matches }) {
+function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, championPts, onSetChampionPts, matches }) {
   const activeUser = participants.find(p => p.id === activePid);
   const winner = getChampionWinner(matches);
-  const finalMatch = matches.find(m => m.phase === "Final");
-  const champLocked = finalMatch ? isLocked(finalMatch.date) : false;
-  const myPick = activeUser?.champion_pick || "";
+  const vice = getViceWinner(matches);
+  const third = getThirdWinner(matches);
+  const actualBrazilPhase = getBrazilPhase(matches);
+  const brazilKnockoutPlayed = matches.some(m => m.phase !== "Fase de Grupos" && m.result && (m.teamA === "Brasil" || m.teamB === "Brasil"));
+
+  const sorted = [...matches].filter(m => m.date && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(a.date) - parseMatchDate(b.date));
+  const firstMatch = sorted[0];
+  const locked = firstMatch ? isLocked(firstMatch.date) : false;
+
+  const picks = [
+    { icon: "🏆", label: "Campeão", pts: championPts, value: activeUser?.champion_pick || "", field: "champion_pick", options: ALL_TEAMS, result: winner, hasResult: !!winner },
+    { icon: "🥈", label: "Vice-Campeão", pts: 10, value: activeUser?.vice_pick || "", field: "vice_pick", options: ALL_TEAMS, result: vice, hasResult: !!vice },
+    { icon: "🥉", label: "3º Lugar", pts: 10, value: activeUser?.third_pick || "", field: "third_pick", options: ALL_TEAMS, result: third, hasResult: !!third },
+    { icon: "🇧🇷", label: "Até onde o Brasil vai?", pts: 15, value: activeUser?.brazil_pick || "", field: "brazil_pick", options: BRAZIL_PHASES, result: brazilKnockoutPlayed ? actualBrazilPhase : null, hasResult: brazilKnockoutPlayed },
+  ];
 
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.gold}55`, borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+    <div style={{ background: C.surface, border: `1px solid ${C.gold}44`, borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 24 }}>🏆</span>
+          <span style={{ fontSize: 22 }}>🏅</span>
           <div>
-            <div style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>Palpite do Campeão do Torneio</div>
-            <div style={{ fontSize: 11, color: C.muted }}>Vale {championPts} pontos bônus no final</div>
+            <div style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>Palpites Especiais</div>
+            <div style={{ fontSize: 11, color: C.muted }}>{locked ? "🔒 Encerrado — torneio em andamento" : "🔓 Disponível até o início do torneio"}</div>
           </div>
         </div>
         {isAdmin && (
-          <div style={{ display: "flex", gap: 5 }}>
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
             {[15, 20, 30].map(v => (
               <button key={v} onClick={() => onSetChampionPts(v)}
                 style={{ ...GHOST_BTN({}), background: championPts === v ? `${C.gold}22` : "none", color: championPts === v ? C.gold : C.muted, borderColor: championPts === v ? `${C.gold}66` : C.border, minHeight: 28, padding: "3px 10px", fontSize: 11 }}>
-                {v}pts
+                {v}pts 🏆
               </button>
             ))}
           </div>
         )}
       </div>
-      {winner && (
-        <div style={{ background: `${C.gold}11`, border: `1px solid ${C.gold}44`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>🏆 Campeão Confirmado:</div>
-          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, color: C.gold }}>{winner}</div>
-        </div>
-      )}
-      {!champLocked ? (
-        <select value={myPick} onChange={e => onPickChampion(activePid, e.target.value)} style={INP({ fontSize: 15 })}>
-          <option value="">— Escolha a seleção campeã —</option>
-          {ALL_TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-      ) : (
-        <div style={{ fontSize: 14, color: C.text, fontWeight: 700, padding: "4px 0" }}>
-          Seu palpite registrado: {myPick || <span style={{ color: C.muted, fontStyle: "italic", fontWeight: 400 }}>Não preenchido</span>}
-          {winner && myPick && (myPick.toLowerCase().trim() === winner.toLowerCase().trim()
-            ? <span style={{ color: C.gold, marginLeft: 8 }}>✅ +{championPts}pts!</span>
-            : <span style={{ color: C.red, marginLeft: 8 }}>❌</span>)}
-        </div>
-      )}
+      {picks.map(pk => {
+        const isCorrect = pk.hasResult && pk.value && pk.result && pk.value.toLowerCase().trim() === pk.result.toLowerCase().trim();
+        const isWrong = pk.hasResult && pk.value && pk.result && !isCorrect;
+        return (
+          <div key={pk.field} style={{ background: C.card, border: `1px solid ${isCorrect ? C.gold : isWrong ? C.red : C.border}44`, borderRadius: 10, padding: "10px 14px", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 18 }}>{pk.icon}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 900, fontSize: 13, color: isCorrect ? C.gold : C.text }}>{pk.label}</div>
+                <div style={{ fontSize: 10, color: C.muted }}>+{pk.pts} pontos bônus</div>
+              </div>
+              {pk.hasResult && <div style={{ fontSize: 11, color: C.muted }}>Resultado: <span style={{ fontWeight: 700, color: C.text }}>{pk.result}</span></div>}
+            </div>
+            {!locked ? (
+              <select value={pk.value} onChange={e => onPickSpecial(activePid, pk.field, e.target.value)} style={INP({ fontSize: 14 })}>
+                <option value="">— Escolha —</option>
+                {pk.options.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontSize: 14, fontWeight: pk.value ? 700 : 400, color: isCorrect ? C.gold : isWrong ? C.red : pk.value ? C.text : C.muted, fontStyle: pk.value ? "normal" : "italic" }}>
+                {pk.value || "Não preenchido"}{isCorrect && " ✅"}{isWrong && " ❌"}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -513,7 +591,7 @@ function TabPlacar({ participants, matches, preds, championPts, prevPositions })
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14 }}>{p.name}</span>
                 {(() => { const prev = prevPositions[p.id]; const delta = prev ? prev - (i + 1) : 0; return delta !== 0 ? <span style={{ fontSize: 10, fontWeight: 900, color: delta > 0 ? C.green : C.red, flexShrink: 0 }}>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</span> : null; })()}
                 {!p.paid && <span style={{ fontSize: 9, background: `${C.red}22`, color: C.red, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix Pendente ⚠️</span>}
-                {p.champBonus > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🏆 +{p.champBonus}</span>}
+                {(p.champBonus + p.viceBonus + p.thirdBonus + p.brazilBonus) > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🎁 +{p.champBonus + p.viceBonus + p.thirdBonus + p.brazilBonus}</span>}
                 {isMobile && <span style={{ marginLeft: "auto", display: "flex", gap: 5, flexShrink: 0 }}>{p.c10 > 0 && <span style={{ fontSize: 10, color: C.gold }}>🎯×{p.c10}</span>}{p.c7 > 0 && <span style={{ fontSize: 10, color: C.green }}>⭐×{p.c7}</span>}</span>}
               </span>
               <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, display: "flex", alignItems: "center", justifyContent: "flex-end", color: i === 0 ? C.gold : i === 1 ? C.silver : i === 2 ? C.bronze : C.text }}>{p.total}</span>
@@ -878,7 +956,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
   );
 }
 
-function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickChampion, championPts, onSetChampionPts }) {
+function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickSpecial, championPts, onSetChampionPts }) {
   const isMobile = useIsMobile(); const [selPid, setSelPid] = useState(""); const [pinInput, setPinInput] = useState(""); const [filter, setFilter] = useState("hoje");
   const activePid = participants.find((p) => p.id === selPid)?.id || participants[0]?.id || "";
   const activeUser = participants.find((p) => p.id === activePid);
@@ -919,7 +997,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
       ) : (
         <>
           {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{pendingCount > 0 && <span style={{ marginLeft: "auto", background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}
-          <ChampionSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickChampion={onPickChampion} championPts={championPts} onSetChampionPts={onSetChampionPts} />
+          <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} championPts={championPts} onSetChampionPts={onSetChampionPts} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
           {grouped.length === 0 && <Empty icon="📅" msg="Nenhuma partida agendada neste filtro." />}
           {isFallback && <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, padding: "8px 12px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8 }}>📅 Sem jogos hoje — mostrando os próximos a acontecer</div>}
@@ -1076,7 +1154,7 @@ export default function BolaoApp() {
   };
 
   const savePin = async (userId, pin) => { setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x)); await supabase.from('participantes').update({ pin }).eq('id', userId); };
-  const onPickChampion = async (pid, pick) => { const updated = participants.map(p => p.id === pid ? { ...p, champion_pick: pick } : p); setParticipants(updated); await supabase.from('participantes').update({ champion_pick: pick }).eq('id', pid); };
+  const onPickSpecial = async (pid, field, value) => { const updated = participants.map(p => p.id === pid ? { ...p, [field]: value } : p); setParticipants(updated); await supabase.from('participantes').update({ [field]: value }).eq('id', pid); };
   const onSetChampionPts = async (pts) => { setChampionPts(pts); await supabase.from('config').upsert({ chave: 'champion_pts', valor: String(pts) }); };
 
   const handleAdminLogin = () => {
@@ -1122,7 +1200,7 @@ export default function BolaoApp() {
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
         {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
-        {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickChampion={onPickChampion} championPts={championPts} onSetChampionPts={onSetChampionPts} />}
+        {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} championPts={championPts} onSetChampionPts={onSetChampionPts} />}
         {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} championPts={championPts} />}
       </div>
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
