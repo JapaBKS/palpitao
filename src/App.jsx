@@ -668,10 +668,33 @@ function TabJogos({ matches, onChange, isAdmin }) {
     ];
 
     const R32_DATES = [ "28/06 (Dom) - 16:00", "29/06 (Seg) - 14:00", "29/06 (Seg) - 17:30", "29/06 (Seg) - 22:00", "30/06 (Ter) - 14:00", "30/06 (Ter) - 18:00", "30/06 (Ter) - 22:00", "01/07 (Qua) - 13:00", "01/07 (Qua) - 17:00", "01/07 (Qua) - 21:00", "02/07 (Qui) - 16:00", "02/07 (Qui) - 20:00", "02/07 (Qui) - 00:00", "03/07 (Sex) - 15:00", "03/07 (Sex) - 19:00", "03/07 (Sex) - 22:30" ];
-    const novos = [...matches];
-    r32.forEach((m, index) => { novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: R32_DATES[index], result: null }); });
-    onChange(novos);
-    alert("🔥 Confrontos de eliminação direta (32-avos) mapeados com sucesso nos horários de Brasília!");
+    
+    // 🛡️ Lógica de Atualização em vez de Duplicação
+    const jaExistem = matches.filter(m => m.phase === "32-avos de Final");
+    let novos = [...matches];
+
+    if (jaExistem.length === 16) {
+      // Apenas ATUALIZA os times mantendo o mesmo ID do Supabase
+      let r32Index = 0;
+      novos = novos.map(m => {
+        if (m.phase === "32-avos de Final") {
+          const atualizado = { ...m, teamA: r32[r32Index].tA, teamB: r32[r32Index].tB };
+          r32Index++;
+          return atualizado;
+        }
+        return m;
+      });
+      onChange(novos);
+      alert("🔄 Chaveamento ATUALIZADO com sucesso! (Nenhum jogo duplicado).");
+    } else {
+      // Limpa caso tenha ficado algum jogo quebrado e gera os 16 novos
+      novos = novos.filter(m => m.phase !== "32-avos de Final");
+      r32.forEach((m, index) => { 
+          novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: R32_DATES[index], result: null }); 
+      });
+      onChange(novos);
+      alert("🔥 Confrontos de eliminação direta (32-avos) gerados pela primeira vez!");
+    }
   };
 
   const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
