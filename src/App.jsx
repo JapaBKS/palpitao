@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://sfpdbotvobdzuckpfcbv.supabase.co';
@@ -712,14 +712,15 @@ function processKnockout(currentMatches) {
     if (!getM(def.id)) nextMatches.push({ id: def.id, teamA: "A Definir", teamB: "A Definir", phase: def.phase, date: def.date, result: null });
   });
 
-  // 4. Injeta os times em tempo real, fase a fase
-  for(let i=0; i<16; i++) { const m = getM(`m_${73+i}`); if (m) { m.teamA = r32[i].tA; m.teamB = r32[i].tB; } }
-  for(let i=0; i<8; i++)  { const m = getM(`m_${89+i}`); if (m) { m.teamA = getW(`m_${73 + i*2}`) || `Vencedor J${73 + i*2}`; m.teamB = getW(`m_${74 + i*2}`) || `Vencedor J${74 + i*2}`; } }
-  for(let i=0; i<4; i++)  { const m = getM(`m_${97+i}`); if (m) { m.teamA = getW(`m_${89 + i*2}`) || `Vencedor J${89 + i*2}`; m.teamB = getW(`m_${90 + i*2}`) || `Vencedor J${90 + i*2}`; } }
-  for(let i=0; i<2; i++)  { const m = getM(`m_${101+i}`); if (m) { m.teamA = getW(`m_${97 + i*2}`) || `Vencedor J${97 + i*2}`; m.teamB = getW(`m_${98 + i*2}`) || `Vencedor J${98 + i*2}`; } }
-  
-  const m103 = getM("m_103"); if (m103) { m103.teamA = getL("m_101") || "Perdedor J101"; m103.teamB = getL("m_102") || "Perdedor J102"; }
-  const m104 = getM("m_104"); if (m104) { m104.teamA = getW("m_101") || "Vencedor J101"; m104.teamB = getW("m_102") || "Vencedor J102"; }
+  // 4. Injeta os times em tempo real, fase a fase (imutável — não muta objetos do estado)
+  const update = (id, fields) => { const idx = nextMatches.findIndex(x => x.id === id); if (idx > -1) nextMatches[idx] = { ...nextMatches[idx], ...fields }; };
+
+  for(let i=0; i<16; i++) { update(`m_${73+i}`, { teamA: r32[i].tA, teamB: r32[i].tB }); }
+  for(let i=0; i<8; i++)  { update(`m_${89+i}`, { teamA: getW(`m_${73 + i*2}`) || `Vencedor J${73 + i*2}`, teamB: getW(`m_${74 + i*2}`) || `Vencedor J${74 + i*2}` }); }
+  for(let i=0; i<4; i++)  { update(`m_${97+i}`, { teamA: getW(`m_${89 + i*2}`) || `Vencedor J${89 + i*2}`, teamB: getW(`m_${90 + i*2}`) || `Vencedor J${90 + i*2}` }); }
+  for(let i=0; i<2; i++)  { update(`m_${101+i}`, { teamA: getW(`m_${97 + i*2}`) || `Vencedor J${97 + i*2}`, teamB: getW(`m_${98 + i*2}`) || `Vencedor J${98 + i*2}` }); }
+  update("m_103", { teamA: getL("m_101") || "Perdedor J101", teamB: getL("m_102") || "Perdedor J102" });
+  update("m_104", { teamA: getW("m_101") || "Vencedor J101", teamB: getW("m_102") || "Vencedor J102" });
 
   return nextMatches;
 }
