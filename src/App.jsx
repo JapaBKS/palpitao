@@ -593,7 +593,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
         {winner && <span style={{ color: C.gold }}>🏆 Vencedor: {winner}</span>}
       </div>
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante cadastrado." />}
-      <PixSection />
+      {participants.some(p => !p.paid) && <PixSection />}
       <ScoringLegend />
       {ranked.length > 0 && (
         <div className="card-hover" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
@@ -1059,6 +1059,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
       ) : (
         <>
           {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{pendingCount > 0 && <span style={{ marginLeft: "auto", background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}
+          {!activeUser?.paid && <PixSection />}
           <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
           {grouped.length === 0 && <Empty icon="📅" msg="Nenhuma partida agendada neste filtro." />}
