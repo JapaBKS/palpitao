@@ -85,15 +85,26 @@ function getRanked(participants, matches, preds, championPts = 20) {
     .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5);
 }
 
-function isLocked(dateStr) {
-  if (!dateStr || dateStr.includes("TBD")) return false;
+function parseMatchDate(dateStr) {
+  if (!dateStr || dateStr.includes("TBD")) return null;
   try {
-    const match = dateStr.match(/(\d{2})\/(\d{2}).*- (\d{2}):(\d{2})/);
-    if (!match) return false;
-    const [, day, month, hour, minute] = match;
-    const matchDate = new Date(`2026-${month}-${day}T${hour}:${minute}:00-03:00`);
-    return new Date() > matchDate;
-  } catch { return false; }
+    const m = dateStr.match(/(\d{2})\/(\d{2}).*- (\d{2}):(\d{2})/);
+    if (!m) return null;
+    const [, day, month, hour, minute] = m;
+    return new Date(`2026-${month}-${day}T${hour}:${minute}:00-03:00`);
+  } catch { return null; }
+}
+
+function isLocked(dateStr) {
+  const d = parseMatchDate(dateStr);
+  return d ? new Date() > d : false;
+}
+
+function isClosingSoon(dateStr, minutes = 30) {
+  const d = parseMatchDate(dateStr);
+  if (!d) return false;
+  const diff = d - new Date();
+  return diff > 0 && diff < minutes * 60 * 1000;
 }
 
 const PHASES = ["Fase de Grupos", "32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
@@ -148,9 +159,27 @@ function PtsBadge({ pts }) { if (pts === null) return <span style={{ width: 34, 
 function ScoreIn({ value, onChange, disabled }) { if (disabled) return <span style={{ width: 52, textAlign: "center", padding: "8px 4px", background: C.surface, borderRadius: 8, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700 }}>{value !== "" ? value : "-"}</span>; return <input type="number" min="0" max="99" value={value} onChange={(e) => onChange(e.target.value)} style={INP({ width: 52, textAlign: "center", padding: "8px 4px", fontSize: 16 })} />; }
 function Divider({ label }) { return <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 17, letterSpacing: 1, color: C.muted, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 10 }}>{label}</div>; }
 
-function Toast({ message, onDone }) {
-  useEffect(() => { const t = setTimeout(onDone, 2500); return () => clearTimeout(t); }, [onDone]);
-  return <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: C.greenDim, color: "#fff", borderRadius: 20, padding: "12px 24px", fontWeight: 700, fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px #000c", whiteSpace: "nowrap", pointerEvents: "none" }}>{message}</div>;
+function Toast({ message, type = "success", onDone }) {
+  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
+  return <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: type === "error" ? "#c62828" : C.greenDim, color: "#fff", borderRadius: 20, padding: "12px 24px", fontWeight: 700, fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px #000c", whiteSpace: "nowrap", pointerEvents: "none" }}>{message}</div>;
+}
+
+function NextMatchCountdown({ matches }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
+  const upcoming = matches.map(m => ({ ...m, dateObj: parseMatchDate(m.date) })).filter(m => m.dateObj && m.dateObj > now).sort((a, b) => a.dateObj - b.dateObj)[0];
+  if (!upcoming) return null;
+  const diff = upcoming.dateObj - now;
+  const h = Math.floor(diff / 3600000), min = Math.floor((diff % 3600000) / 60000), sec = Math.floor((diff % 60000) / 1000);
+  const fmt = h > 0 ? `${h}h ${min}m` : `${min}m ${sec}s`;
+  return (
+    <div style={{ fontSize: 11, color: C.muted, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+      <span>⏱</span>
+      <span style={{ color: C.text, fontWeight: 700 }}>{upcoming.teamA} × {upcoming.teamB}</span>
+      <span>em</span>
+      <span style={{ color: diff < 30 * 60 * 1000 ? C.gold : C.green, fontWeight: 900, fontFamily: "'Bebas Neue', cursive", fontSize: 14 }}>{fmt}</span>
+    </div>
+  );
 }
 
 /* ── Modais e Secoes ── */
@@ -848,9 +877,10 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                 const pred = preds[activePid]?.[m.id] || {};
                 const pts = m.result ? calcPts(pred, m.result) : null;
                 const locked = isLocked(m.date);
+                const closingSoon = !locked && isClosingSoon(m.date);
                 return (
-                  <div key={m.id} style={{ background: C.card, border: `1px solid ${locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{locked ? " (Tempo Esgotado)" : ""}</span>}
+                  <div key={m.id} style={{ background: C.card, border: `1px solid ${closingSoon ? C.gold + "66" : locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : closingSoon ? C.gold : C.greenDim, fontWeight: 700 }}>{m.date}{locked ? " (Tempo Esgotado)" : closingSoon ? " ⚠️ Fecha em breve!" : ""}</span>}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamA}</span>
                       <ScoreIn value={pred.a ?? ""} onChange={(v) => setPred(m.id, "a", v)} disabled={locked} />
@@ -945,13 +975,21 @@ export default function BolaoApp() {
 
   const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
-  const sm = async (d) => { setMatches(d); await supabase.from('jogos').upsert(d.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null }))); };
+  const sm = async (d) => {
+    const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result); });
+    setMatches(d);
+    if (changed.length === 0) return;
+    const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
+    if (error) showToast("❌ Erro ao salvar jogo no servidor!", "error");
+  };
 
   const spr = async (d) => {
-    setPreds(d);
     const toSave = [];
-    Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => { const p = d[participante_id][jogo_id]; if (p.a !== "" && p.b !== "" && p.a != null && p.b != null) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b) }); }); });
-    if (toSave.length > 0) await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
+    Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => { const p = d[participante_id][jogo_id]; if (p.a === "" || p.b === "" || p.a == null || p.b == null) return; const old = preds[participante_id]?.[jogo_id]; if (!old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b)) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b) }); }); });
+    setPreds(d);
+    if (toSave.length === 0) return;
+    const { error } = await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
+    if (error) showToast("❌ Palpite não foi salvo! Verifique a conexão.", "error");
   };
 
   const savePin = async (userId, pin) => { setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x)); await supabase.from('participantes').update({ pin }).eq('id', userId); };
@@ -964,7 +1002,10 @@ export default function BolaoApp() {
     if (pwd === "bruno2026") setIsAdmin(true); else if (pwd !== null) alert("Acesso negado: Credencial incorreta.");
   };
 
-  const showToast = () => { if (toast) return; setToast("✓ Palpite gravado na nuvem!"); };
+  const showToast = (msg = "✓ Palpite gravado na nuvem!", type = "success") => {
+    if (type === "success" && toast) return;
+    setToast({ message: msg, type });
+  };
 
   const TABS = [ { id: "placar", label: "🏆 Placar" }, { id: "palpites", label: "📋 Palpites" }, { id: "tabelas", label: "📊 Tabelas" }, { id: "chaveamento", label: "🌳 Chaveamento" }, { id: "visao", label: "👁️ Auditoria" }, { id: "jogos", label: "⚽ Painel Jogos" }, { id: "participantes", label: "👥 Jogadores" } ];
 
@@ -980,7 +1021,10 @@ export default function BolaoApp() {
       `}</style>
       <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10 }}>
-          <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA 2026 {isAdmin && "<ADMIN>"}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA 2026 {isAdmin && "<ADMIN>"}</div>
+            {matches.length > 0 && <NextMatchCountdown matches={matches} />}
+          </div>
           <div style={{ marginLeft: "auto" }}><span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 11 : 13 }}>Caixa: R$ {(participants.length * 100).toLocaleString("pt-BR")}</span></div>
         </div>
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
@@ -996,7 +1040,7 @@ export default function BolaoApp() {
         {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickChampion={onPickChampion} championPts={championPts} onSetChampionPts={onSetChampionPts} />}
         {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} championPts={championPts} />}
       </div>
-      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </div>
   );
 }
