@@ -175,7 +175,7 @@ const GRUPOS = {
   I: ["França", "Senegal", "Iraque", "Noruega"], J: ["Argentina", "Argélia", "Áustria", "Jordânia"],
   K: ["Portugal", "RD Congo", "Uzbequistão", "Colômbia"], L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
 };
-const ALL_TEAMS = Object.values(GRUPOS).flat().sort();
+const ALL_TEAMS = Object.values(GRUPOS).flat().sort((a, b) => a.localeCompare(b, 'pt-BR'));
 const TEAM_TO_GROUP = {};
 Object.entries(GRUPOS).forEach(([letter, teams]) => { teams.forEach(team => { TEAM_TO_GROUP[team.toLowerCase()] = letter; }); });
 
