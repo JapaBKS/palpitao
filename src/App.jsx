@@ -368,9 +368,7 @@ function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, 
   const actualBrazilPhase = getBrazilPhase(matches);
   const brazilKnockoutPlayed = matches.some(m => m.phase !== "Fase de Grupos" && m.result && (m.teamA === "Brasil" || m.teamB === "Brasil"));
 
-  const sorted = [...matches].filter(m => m.date && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(a.date) - parseMatchDate(b.date));
-  const firstMatch = sorted[0];
-  const locked = firstMatch ? isLocked(firstMatch.date) : false;
+  const locked = isAdmin ? false : matches.some(m => m.phase === "Fase de Grupos" && m.result != null);
 
   const picks = [
     { icon: "🏆", label: "Campeão", pts: championPts, value: activeUser?.champion_pick || "", field: "champion_pick", options: ALL_TEAMS, result: winner, hasResult: !!winner },
@@ -386,7 +384,7 @@ function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, 
           <span style={{ fontSize: 22 }}>🏅</span>
           <div>
             <div style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>Palpites Especiais</div>
-            <div style={{ fontSize: 11, color: C.muted }}>{locked ? "🔒 Encerrado — torneio em andamento" : "🔓 Disponível até o início do torneio"}</div>
+            <div style={{ fontSize: 11, color: C.muted }}>{locked ? "🔒 Encerrado — primeiro jogo da fase de grupos já iniciou" : "🔓 Disponível até o 1º jogo da fase de grupos"}</div>
           </div>
         </div>
         {isAdmin && (
@@ -1154,7 +1152,7 @@ export default function BolaoApp() {
   };
 
   const savePin = async (userId, pin) => { setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x)); await supabase.from('participantes').update({ pin }).eq('id', userId); };
-  const onPickSpecial = async (pid, field, value) => { const updated = participants.map(p => p.id === pid ? { ...p, [field]: value } : p); setParticipants(updated); await supabase.from('participantes').update({ [field]: value }).eq('id', pid); };
+  const onPickSpecial = async (pid, field, value) => { const updated = participants.map(p => p.id === pid ? { ...p, [field]: value } : p); setParticipants(updated); const { error } = await supabase.from('participantes').update({ [field]: value }).eq('id', pid); if (error) showToast("❌ Erro ao salvar — rode o SQL de migração no Supabase!", "error"); };
   const onSetChampionPts = async (pts) => { setChampionPts(pts); await supabase.from('config').upsert({ chave: 'champion_pts', valor: String(pts) }); };
 
   const handleAdminLogin = () => {
