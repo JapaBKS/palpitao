@@ -124,6 +124,8 @@ function getBrazilPhase(matches) {
   return "Fase de Grupos";
 }
 
+const PIX_CODE = "00020126360014br.gov.bcb.pix0114+5541992774415520400005303986540550.005802BR5915Bruno Sakaguchi6009Sao Paulo62230519daqr25755251968148163044C9D";
+
 const CHAMPION_PTS = 40;
 const VICE_PTS = 20;
 const THIRD_PTS = 10;
@@ -536,6 +538,32 @@ function FilterBar({ active, onChange, matches }) {
   );
 }
 
+function PixSection() {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(PIX_CODE).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); });
+  };
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>💰 Pagar Inscrição (R$ 50) — PIX Copia e Cola</span>
+        <span style={{ fontSize: 10, transition: "transform .2s", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 11, color: C.muted }}>Código PIX (Copia e Cola):</div>
+          <div style={{ background: C.input, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 11, color: C.text, fontFamily: "monospace", wordBreak: "break-all", lineHeight: 1.6, userSelect: "all" }}>{PIX_CODE}</div>
+          <button onClick={copy} style={{ ...BTN(), width: "100%", background: copied ? C.greenDim : C.greenDim, transition: "all .2s" }}>
+            {copied ? "✅ Copiado!" : "📋 Copiar Código PIX"}
+          </button>
+          <div style={{ fontSize: 11, color: C.muted, textAlign: "center" }}>Após pagar, avise o admin para confirmar sua inscrição no sistema.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Abas Principais ── */
 function TabPlacar({ participants, matches, preds, prevPositions }) {
   const isMobile = useIsMobile();
@@ -565,6 +593,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
         {winner && <span style={{ color: C.gold }}>🏆 Vencedor: {winner}</span>}
       </div>
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante cadastrado." />}
+      <PixSection />
       <ScoringLegend />
       {ranked.length > 0 && (
         <div className="card-hover" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
