@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
 import { createClient } from '@supabase/supabase-js';
 
+// ── CONEXÃO COM O BANCO DE DADOS ──
 const supabaseUrl = 'https://sfpdbotvobdzuckpfcbv.supabase.co';
 const supabaseKey = 'sb_publishable_FQaWYA6nqB1Fz9IS2O4klg_Eu1Q2mU4';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-/* ── Hooks ── */
+/* ── HOOKS RESPONSIVOS ── */
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 600);
   useEffect(() => {
@@ -16,23 +17,50 @@ function useIsMobile() {
   return isMobile;
 }
 
-/* ── Utils ── */
+/* ── CONFIGURAÇÕES E GRUPOS OFICIAIS DA COPA 2026 ── */
+const GRUPOS = {
+  A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
+  B: ["Canadá", "Bósnia", "Catar", "Suíça"],
+  C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
+  D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
+  E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
+  F: ["Holanda", "Japão", "Suécia", "Tunísia"],
+  G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
+  H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
+  I: ["França", "Senegal", "Noruega", "Bolívia/Iraque"],
+  J: ["Argentina", "Argélia", "Áustria", "Jordânia"],
+  K: ["Portugal", "RD Congo", "Uzbequistão", "Colômbia"],
+  L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
+};
+const ALL_TEAMS = Object.values(GRUPOS).flat().sort();
+const TEAM_TO_GROUP = {};
+Object.entries(GRUPOS).forEach(([letter, teams]) => {
+  teams.forEach(team => { TEAM_TO_GROUP[team.toLowerCase()] = letter; });
+});
+
+const PHASES = ["Fase de Grupos", "32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
+const MATA_MATA = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
+
+/* ── CONSTANTES DE SINALIZAÇÃO DE ID ── */
 let _n = 0;
 const uid = () => `${Date.now()}_${++_n}`;
 
+/* ── MOTOR MATEMÁTICO DE REGRAS DE PONTUAÇÃO ── */
 function calcPts(pred, result) {
   if (!result || !pred || pred.a == null || pred.b == null || pred.a === "" || pred.b === "") return null;
   const pa = parseInt(pred.a), pb = parseInt(pred.b), ra = parseInt(result.a), rb = parseInt(result.b);
   if ([pa, pb, ra, rb].some((v) => isNaN(v) || v < 0)) return null;
-  if (pa === ra && pb === rb) return 10;
+  
+  if (pa === ra && pb === rb) return 10; // Placar Exato
   const pt = Math.sign(pa - pb), rt = Math.sign(ra - rb);
-  const ok = pt === rt;
-  if (ok && (pa === ra || pb === rb)) return 7;
-  if (ok) return 5;
-  if (pa === ra || pb === rb) return 2;
+  const ok = pt === rt; // Acertou o vencedor ou empate
+  if (ok && (pa === ra || pb === rb)) return 7; // Acertou tendência + gols de um time
+  if (ok) return 5; // Acertou tendência simples
+  if (pa === ra || pb === rb) return 2; // Errou tendência, mas acertou os gols de um time
   return 0;
 }
 
+/* ── MOTORES DE ESTATÍSTICA E DESEMPENHO DOS JOGADORES ── */
 function getStats(pid, matches, preds) {
   let total = 0, c10 = 0, c7 = 0, c5 = 0, c2 = 0, c0 = 0;
   for (const m of matches) {
@@ -56,6 +84,7 @@ function getDetailedStats(pid, matches, preds) {
   let bestPts = -1, bestMatch = null, worstPts = 11, worstMatch = null;
   let streak = 0, streakDone = false;
   const played = matches.filter(m => m.result);
+  
   for (let i = played.length - 1; i >= 0; i--) {
     const m = played[i];
     const p = preds[pid]?.[m.id];
@@ -84,13 +113,13 @@ function getRanked(participants, matches, preds, championPts = 20) {
   return [...participants]
     .map(p => {
       const stats = getStats(p.id, matches, preds);
-      const champBonus = (winner && p.champion_pick &&
-        p.champion_pick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
+      const champBonus = (winner && p.champion_pick && p.champion_pick.toLowerCase().trim() === winner.toLowerCase().trim()) ? championPts : 0;
       return { ...p, ...stats, total: stats.total + champBonus, champBonus };
     })
     .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5);
 }
 
+/* ── MOTOR DE VERIFICAÇÃO DE HORÁRIO (TRAVA DE SEGURANÇA) ── */
 function isLocked(dateStr) {
   if (!dateStr || dateStr.includes("TBD")) return false;
   try {
@@ -102,38 +131,63 @@ function isLocked(dateStr) {
   } catch { return false; }
 }
 
-const PHASES = ["Fase de Grupos", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
+/* ── MOTOR DE CÁLCULO DE CLASSIFICAÇÃO DOS GRUPO DA FIFA ── */
+function getGroupStandings(matches) {
+  const st = {};
+  Object.keys(GRUPOS).forEach(g => {
+    st[g] = GRUPOS[g].map(t => ({ team: t, pts: 0, gf: 0, ga: 0, gd: 0, pld: 0 }));
+  });
+  const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result);
+  groupMatches.forEach(m => {
+    let gA = TEAM_TO_GROUP[m.teamA.toLowerCase()], gB = TEAM_TO_GROUP[m.teamB.toLowerCase()];
+    if(!gA) Object.keys(TEAM_TO_GROUP).forEach(k => { if(m.teamA.toLowerCase().includes(k)) gA = TEAM_TO_GROUP[k]; });
+    if(!gB) Object.keys(TEAM_TO_GROUP).forEach(k => { if(m.teamB.toLowerCase().includes(k)) gB = TEAM_TO_GROUP[k]; });
+    
+    const rA = m.result.a, rB = m.result.b;
+    if (gA && st[gA]) {
+      const t = st[gA].find(x => x.team.toLowerCase() === m.teamA.toLowerCase() || m.teamA.toLowerCase().includes(x.team.toLowerCase()));
+      if (t) { t.pld++; t.gf += rA; t.ga += rB; t.gd += (rA - rB); if (rA > rB) t.pts += 3; else if (rA === rB) t.pts += 1; }
+    }
+    if (gB && st[gB]) {
+      const t = st[gB].find(x => x.team.toLowerCase() === m.teamB.toLowerCase() || m.teamB.toLowerCase().includes(x.team.toLowerCase()));
+      if (t) { t.pld++; t.gf += rB; t.ga += rA; t.gd += (rB - rA); if (rB > rA) t.pts += 3; else if (rA === rB) t.pts += 1; }
+    }
+  });
+  Object.keys(st).forEach(g => {
+    st[g].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0);
+  });
+  return st;
+}
 
-/* ── Design tokens ── */
+/* ── TOKENS DE DESIGN VISUAL (ESTILOS COMPARTILHADOS) ── */
 const C = {
-  bg: "#06090a", surface: "#0b1015", card: "#10171d", cardHover: "#141e26",
-  border: "#1b2c38", green: "#00e676", greenDim: "#00a152", gold: "#ffca28",
-  silver: "#90a4ae", bronze: "#ff8f00", text: "#cce8d4", muted: "#4a6a5a",
-  red: "#ff5252", blue: "#40c4ff", input: "#0c1820",
+  bg: "#06090a", surface: "#0b1015", card: "#10171d", cardHover: "#141e26", border: "#1b2c38",
+  green: "#00e676", greenDim: "#00a152", gold: "#ffca28", silver: "#90a4ae", bronze: "#ff8f00",
+  text: "#cce8d4", muted: "#4a6a5a", red: "#ff5252", blue: "#40c4ff", input: "#0c1820"
 };
 
-/* ── Shared styles ── */
 const INP = (extra = {}) => ({
-  background: C.input, border: `1px solid ${C.border}`, borderRadius: 8,
-  color: C.text, padding: "10px 12px", fontSize: 16, fontFamily: "inherit",
-  outline: "none", width: "100%", boxSizing: "border-box", ...extra,
+  background: C.input, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text,
+  padding: "10px 12px", fontSize: 16, fontFamily: "inherit", outline: "none",
+  width: "100%", boxSizing: "border-box", ...extra
 });
+
 const BTN = (extra = {}) => ({
-  background: C.greenDim, border: "none", borderRadius: 8, color: "#fff",
-  padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer",
-  fontFamily: "inherit", whiteSpace: "nowrap", minHeight: 44, display: "inline-flex",
-  alignItems: "center", justifyContent: "center", ...extra,
+  background: C.greenDim, border: "none", borderRadius: 8, color: "#fff", padding: "10px 18px",
+  fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+  minHeight: 44, display: "inline-flex", alignItems: "center", justifyContent: "center", ...extra
 });
+
 const GHOST_BTN = (extra = {}) => ({
   background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted,
-  padding: "6px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-  minHeight: 36, display: "inline-flex", alignItems: "center", justifyContent: "center", ...extra,
+  padding: "6px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", minHeight: 36,
+  display: "inline-flex", alignItems: "center", justifyContent: "center", ...extra
 });
 
 const ptsColor = { 10: C.gold, 7: C.green, 5: C.blue, 2: C.bronze, 0: C.muted };
 const ptsBg   = { 10: "#1a1200", 7: "#001a0d", 5: "#001428", 2: "#1a0a00", 0: "#101a17" };
 
-/* ── Sub-components ── */
+/* ── SUBCOMPONENTES ATÔMICOS DA INTERFACE ── */
 function Empty({ icon, msg }) {
   return (
     <div style={{ textAlign: "center", padding: "60px 0", color: C.muted }}>
@@ -163,7 +217,6 @@ function Divider({ label }) {
   return <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 17, letterSpacing: 1, color: C.muted, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 10 }}>{label}</div>;
 }
 
-/* ── Toast ── */
 function Toast({ message, onDone }) {
   useEffect(() => {
     const t = setTimeout(onDone, 2500);
@@ -176,7 +229,7 @@ function Toast({ message, onDone }) {
   );
 }
 
-/* ── Stats Modal (Atualizado com Conquistas) ── */
+/* ── MODAL DETALHADO DE ESTATÍSTICAS E CONQUISTAS ── */
 function StatsModal({ participant, matches, preds, onClose, championPts }) {
   const stats = getDetailedStats(participant.id, matches, preds);
   const winner = getChampionWinner(matches);
@@ -193,9 +246,8 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   ];
   const maxCount = Math.max(...bars.map(b => b.count), 1);
 
-  // 🏆 LÓGICA DO SISTEMA DE CONQUISTAS
   const badges = [];
-  if (stats.c10 >= 3) badges.push({ icon: "🎯", name: "Sniper", desc: "3+ placares exatos" });
+  if (stats.c10 >= 3) badges.push({ icon: "🎯", name: "Sniper", desc: "3+ exatos" });
   if (stats.streak >= 4) badges.push({ icon: "🔥", name: "On Fire", desc: "Série de 4+ acertos" });
   if (stats.c0 >= 5) badges.push({ icon: "🥶", name: "Pé Frio", desc: "5+ palpites zerados" });
   if (stats.accuracy >= 60 && stats.withPredCount >= 5) badges.push({ icon: "🔮", name: "Mãe Dináh", desc: "+60% de precisão" });
@@ -204,8 +256,6 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 420, maxHeight: "90vh", overflowY: "auto" }}>
-        
-        {/* Header */}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontWeight: 900, fontSize: 18, color: C.text }}>{participant.name}</div>
@@ -216,33 +266,28 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
           <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
         </div>
 
-        {/* Total pts */}
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 48, color: C.gold, lineHeight: 1 }}>{totalWithChamp}</span>
           <span style={{ color: C.muted, fontSize: 13 }}>pontos</span>
           {champBonus > 0 && <span style={{ fontSize: 12, background: `${C.gold}22`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "2px 8px" }}>+{champBonus} campeão 🏆</span>}
         </div>
 
-        {/* 🏅 Galeria de Conquistas */}
         {badges.length > 0 && (
-          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, background: `${C.surface}` }}>
+          <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Conquistas Desbloqueadas</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {badges.map(badge => (
-                <div key={badge.name} style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, padding: "6px 10px", borderRadius: 20 }}>
-                  <span style={{ fontSize: 16 }}>{badge.icon}</span>
-                  <div style={{ display: "flex", flexDirection: "column" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{badge.name}</span>
-                  </div>
+              {badges.map(b => (
+                <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, padding: "6px 10px", borderRadius: 20 }}>
+                  <span style={{ fontSize: 16 }}>{b.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{b.name}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Breakdown bars */}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Breakdown</div>
+          <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Breakdown de Pontos</div>
           {bars.map(b => (
             <div key={b.pts} style={{ display: "grid", gridTemplateColumns: "100px 1fr 24px", gap: 8, alignItems: "center", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -257,7 +302,6 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
           ))}
         </div>
 
-        {/* Best / Worst / Champion */}
         <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
           {stats.bestMatch && (
             <div style={{ background: `${C.gold}0a`, border: `1px solid ${C.gold}33`, borderRadius: 8, padding: "10px 14px" }}>
@@ -290,23 +334,7 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   );
 }
 
-/* ── Champion Section ── */
-const GRUPOS = {
-  A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
-  B: ["Canadá", "Bósnia", "Catar", "Suíça"],
-  C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
-  D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
-  E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
-  F: ["Holanda", "Japão", "Suécia", "Tunísia"],
-  G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
-  H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
-  I: ["França", "Senegal", "Noruega", "Repescagem Intercontinental 2"],
-  J: ["Argentina", "Argélia", "Áustria", "Jordânia"],
-  K: ["Portugal", "RD Congo", "Uzbequistão", "Colômbia"],
-  L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
-};
-const ALL_TEAMS = Object.values(GRUPOS).flat().sort();
-
+/* ── SEÇÃO DE PALPITE DE CAMPEÃO ── */
 function ChampionSection({ activePid, participants, isAdmin, onPickChampion, championPts, onSetChampionPts, matches }) {
   const activeUser = participants.find(p => p.id === activePid);
   const winner = getChampionWinner(matches);
@@ -320,8 +348,8 @@ function ChampionSection({ activePid, participants, isAdmin, onPickChampion, cha
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 24 }}>🏆</span>
           <div>
-            <div style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>Palpite do Campeão</div>
-            <div style={{ fontSize: 11, color: C.muted }}>Vale {championPts} pontos bônus</div>
+            <div style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>Palpite do Campeão do Torneio</div>
+            <div style={{ fontSize: 11, color: C.muted }}>Vale {championPts} pontos bônus no final</div>
           </div>
         </div>
         {isAdmin && (
@@ -338,19 +366,19 @@ function ChampionSection({ activePid, participants, isAdmin, onPickChampion, cha
 
       {winner && (
         <div style={{ background: `${C.gold}11`, border: `1px solid ${C.gold}44`, borderRadius: 8, padding: "10px 14px", marginBottom: 12, textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>🏆 Campeão da Copa</div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>🏆 Campeão Confirmado:</div>
           <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, color: C.gold }}>{winner}</div>
         </div>
       )}
 
       {!champLocked ? (
         <select value={myPick} onChange={e => onPickChampion(activePid, e.target.value)} style={INP({ fontSize: 15 })}>
-          <option value="">— Escolha o campeão —</option>
+          <option value="">— Escolha a seleção campeã —</option>
           {ALL_TEAMS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       ) : (
         <div style={{ fontSize: 14, color: C.text, fontWeight: 700, padding: "4px 0" }}>
-          Seu palpite: {myPick || <span style={{ color: C.muted, fontStyle: "italic", fontWeight: 400 }}>Não registrado</span>}
+          Seu palpite registrado: {myPick || <span style={{ color: C.muted, fontStyle: "italic", fontWeight: 400 }}>Não preenchido</span>}
           {winner && myPick && (myPick.toLowerCase().trim() === winner.toLowerCase().trim()
             ? <span style={{ color: C.gold, marginLeft: 8 }}>✅ +{championPts}pts!</span>
             : <span style={{ color: C.red, marginLeft: 8 }}>❌</span>)}
@@ -360,7 +388,7 @@ function ChampionSection({ activePid, participants, isAdmin, onPickChampion, cha
   );
 }
 
-/* ── Post-Game Mural ── */
+/* ── MURAL DE PALPITES COMPARTILHADOS ── */
 function PostGameMural({ match, participants, preds }) {
   const [open, setOpen] = useState(false);
   const sorted = [...participants].sort((a, b) => {
@@ -372,7 +400,7 @@ function PostGameMural({ match, participants, preds }) {
     <div style={{ marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
       <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: 0, display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
         <span style={{ fontSize: 9, display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}>▶</span>
-        {open ? "Fechar palpites" : "Ver palpites de todos"}
+        {open ? "Ocultar lista de palpites" : "Ver palpites de todos os participantes"}
       </button>
       {open && (
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -396,13 +424,13 @@ function PostGameMural({ match, participants, preds }) {
   );
 }
 
-/* ── Scoring Legend ── */
+/* ── LEGENDA EXPLICATIVA DE REGRAS ── */
 const RULES = [
-  { pts: 10, icon: "🎯", label: "Placar Exato",      desc: "Acertou o resultado completo" },
-  { pts:  7, icon: "⭐", label: "Tendência + Gols",  desc: "Acertou o vencedor e gols de um time" },
-  { pts:  5, icon: "✅", label: "Tendência Simples", desc: "Acertou só o vencedor (ou empate)" },
-  { pts:  2, icon: "〰️", label: "Gols de um time",   desc: "Errou o vencedor, mas acertou gols de um" },
-  { pts:  0, icon: "❌", label: "Erro Total",        desc: "Não acertou nada" },
+  { pts: 10, icon: "🎯", label: "Placar Exato",       desc: "Acertou o placar em cheio" },
+  { pts:  7, icon: "⭐", label: "Tendência + Gols",  desc: "Acertou o vencedor/empate e os gols de uma das equipes" },
+  { pts:  5, icon: "✅", label: "Tendência Simples", desc: "Acertou quem ganharia ou se daria empate" },
+  { pts:  2, icon: "〰️", label: "Gols de um time",    desc: "Errou o vencedor, mas cravou a quantidade de gols de um time" },
+  { pts:  0, icon: "❌", label: "Erro Total",        desc: "Não pontuou na partida" },
 ];
 
 function ScoringLegend() {
@@ -410,7 +438,7 @@ function ScoringLegend() {
   return (
     <div style={{ marginBottom: 20 }}>
       <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span>📖 Como funciona a pontuação?</span>
+        <span>📖 Consultar critérios de pontuação</span>
         <span style={{ fontSize: 10, transition: "transform .2s", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
       </button>
       {open && (
@@ -431,35 +459,24 @@ function ScoringLegend() {
   );
 }
 
-/* ── Filter bar ── */
-const MATA_MATA = ["Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
-
-const TEAM_TO_GROUP = {};
-Object.entries(GRUPOS).forEach(([letter, teams]) => {
-  teams.forEach(team => { TEAM_TO_GROUP[team.toLowerCase()] = letter; });
-});
-
-function getMatchGroup(match) {
-  if (match.phase !== "Fase de Grupos") return null;
-  const a = (match.teamA || "").toLowerCase(), b = (match.teamB || "").toLowerCase();
-  if (TEAM_TO_GROUP[a]) return TEAM_TO_GROUP[a];
-  if (TEAM_TO_GROUP[b]) return TEAM_TO_GROUP[b];
-  for (const [key, letter] of Object.entries(TEAM_TO_GROUP)) {
-    if (a.includes(key) || key.includes(a) || b.includes(key) || key.includes(b)) return letter;
-  }
-  return null;
-}
-
+/* ── BARRA DE FILTRAGEM RÁPIDA DE JOGOS ── */
 function todayDDMM() {
   const d = new Date();
   return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
 }
 
 function applyFilter(matches, filter) {
-  if (filter === "hoje")           return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
-  if (filter === "grupos")         return matches.filter(m => m.phase === "Fase de Grupos");
-  if (filter === "mata")           return matches.filter(m => MATA_MATA.includes(m.phase));
-  if (filter.startsWith("grupo-")) return matches.filter(m => getMatchGroup(m) === filter.split("-")[1]);
+  if (filter === "hoje") return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
+  if (filter === "grupos") return matches.filter(m => m.phase === "Fase de Grupos");
+  if (filter === "mata") return matches.filter(m => MATA_MATA.includes(m.phase));
+  if (filter.startsWith("grupo-")) {
+    const letra = filter.split("-")[1];
+    return matches.filter(m => {
+      if (m.phase !== "Fase de Grupos") return false;
+      const tA = m.teamA.toLowerCase(), tB = m.teamB.toLowerCase();
+      return TEAM_TO_GROUP[tA] === letra || TEAM_TO_GROUP[tB] === letra;
+    });
+  }
   return matches;
 }
 
@@ -500,14 +517,14 @@ function FilterBar({ active, onChange, matches }) {
       {isGrupoActive && (
         <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingTop: 8, paddingBottom: 2, scrollbarWidth: "none" }}>
           <button onClick={() => onChange("grupos")} style={PILL(active === "grupos", C.blue)}>
-            Todos<span style={{ fontSize: 10, background: active === "grupos" ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count("grupos")}</span>
+            Todos os Grupos <span style={{ fontSize: 10, background: active === "grupos" ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count("grupos")}</span>
           </button>
           {Object.keys(GRUPOS).map(letter => {
             const filterId = `grupo-${letter}`;
             const isAct = active === filterId;
             return (
               <button key={letter} onClick={() => onChange(filterId)} style={PILL(isAct, C.blue)}>
-                {letter}<span style={{ fontSize: 10, background: isAct ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count(filterId)}</span>
+                Grupo {letter} <span style={{ fontSize: 10, background: isAct ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count(filterId)}</span>
               </button>
             );
           })}
@@ -517,7 +534,7 @@ function FilterBar({ active, onChange, matches }) {
   );
 }
 
-/* ── Tabs ── */
+/* ── ABA 1: TABELA DE RANKING E PREMIAÇÃO GERAL ── */
 function TabPlacar({ participants, matches, preds, championPts }) {
   const isMobile = useIsMobile();
   const [statsFor, setStatsFor] = useState(null);
@@ -535,90 +552,62 @@ function TabPlacar({ participants, matches, preds, championPts }) {
 
   return (
     <div>
-      {/* Prize cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: isMobile ? 8 : 12, marginBottom: 20 }}>
         {prizes.map((pr, i) => (
           <div key={i} style={{ background: C.card, border: `1px solid ${pr.color}44`, borderRadius: 12, padding: isMobile ? "10px 6px" : "14px 10px", textAlign: "center" }}>
             <div style={{ fontSize: isMobile ? 20 : 26, marginBottom: 4 }}>{medals[i]}</div>
-            <div style={{ fontSize: isMobile ? 10 : 11, color: C.muted }}>{i === 0 ? "1º" : i === 1 ? "2º" : "3º"} ({pr.pct})</div>
+            <div style={{ fontSize: isMobile ? 10 : 11, color: C.muted }}>{i === 0 ? "1º Lugar" : i === 1 ? "2º Lugar" : "3º Lugar"} ({pr.pct})</div>
             <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 16 : 22, letterSpacing: 1, color: pr.color, marginTop: 4 }}>R$ {pr.val.toLocaleString("pt-BR")}</div>
           </div>
         ))}
       </div>
 
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <span>⚽ {played}/{matches.length} com resultado</span>
-        <span>💰 R$ {total.toLocaleString("pt-BR")}</span>
-        <span>👥 {participants.length}</span>
-        {winner && <span style={{ color: C.gold }}>🏆 {winner}</span>}
+        <span>⚽ {played}/{matches.length} partidas finalizadas</span>
+        <span>💰 Caixa Arrecadado: R$ {total.toLocaleString("pt-BR")}</span>
+        <span>👥 Jogadores ativos: {participants.length}</span>
+        {winner && <span style={{ color: C.gold }}>🏆 Vencedor da Copa: {winner}</span>}
       </div>
 
-      {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante." />}
+      {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante cadastrado." />}
       <ScoringLegend />
 
-      {/* Ranking */}
       {ranked.length > 0 && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 10, color: C.muted }}>#</span>
-            <span style={{ fontSize: 10, color: C.muted }}>Nome <span style={{ opacity: 0.4 }}>↗ ver stats</span></span>
-            <span style={{ fontSize: 10, color: C.muted, textAlign: "right" }}>Pts</span>
-            {!isMobile && <>
-              <span style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>10</span>
-              <span style={{ fontSize: 10, color: C.green, textAlign: "center" }}>7</span>
-              <span style={{ fontSize: 10, color: C.blue, textAlign: "center" }}>5</span>
-            </>}
+            <span style={{ fontSize: 10, color: C.muted }}>POS</span>
+            <span style={{ fontSize: 10, color: C.muted }}>NOME (Clique para abrir estatísticas)</span>
+            <span style={{ fontSize: 10, color: C.muted, textAlign: "right" }}>PONTOS</span>
+            {!isMobile && (
+              <>
+                <span style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>10</span>
+                <span style={{ fontSize: 10, color: C.green, textAlign: "center" }}>7</span>
+                <span style={{ fontSize: 10, color: C.blue, textAlign: "center" }}>5</span>
+              </>
+            )}
           </div>
           {ranked.map((p, i) => (
             <div key={p.id} onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent", cursor: "pointer" }}>
               <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? (isMobile ? 17 : 20) : 13, color: i >= 3 ? C.muted : undefined }}>{i < 3 ? medals[i] : `${i + 1}º`}</span>
               <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14 }}>{p.name}</span>
-                {!p.paid && <span style={{ fontSize: 9, background: `${C.red}22`, color: C.red, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix⚠️</span>}
-                {p.champBonus > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🏆+{p.champBonus}</span>}
+                {!p.paid && <span style={{ fontSize: 9, background: `${C.red}22`, color: C.red, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix Pendente ⚠️</span>}
+                {p.champBonus > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🏆 +{p.champBonus}</span>}
                 {isMobile && (
                   <span style={{ marginLeft: "auto", display: "flex", gap: 5, flexShrink: 0 }}>
-                    {p.c10 > 0 && <span style={{ fontSize: 10, color: C.gold }}>×{p.c10}</span>}
-                    {p.c7 > 0 && <span style={{ fontSize: 10, color: C.green }}>×{p.c7}</span>}
+                    {p.c10 > 0 && <span style={{ fontSize: 10, color: C.gold }}>🎯×{p.c10}</span>}
+                    {p.c7 > 0 && <span style={{ fontSize: 10, color: C.green }}>⭐×{p.c7}</span>}
                   </span>
                 )}
               </span>
               <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, display: "flex", alignItems: "center", justifyContent: "flex-end", color: i === 0 ? C.gold : i === 1 ? C.silver : i === 2 ? C.bronze : C.text }}>{p.total}</span>
-              {!isMobile && <>
-                <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.gold, fontWeight: 900 }}>{p.c10 || "—"}</span>
-                <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontWeight: 900 }}>{p.c7 || "—"}</span>
-                <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, fontWeight: 900 }}>{p.c5 || "—"}</span>
-              </>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Modo leitura — palpites recentes */}
-      {recentPlayed.length > 0 && (
-        <div>
-          <Divider label="Palpites Recentes" />
-          {recentPlayed.map(m => (
-            <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamA}</span>
-                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 20, color: C.green, padding: "2px 14px", background: `${C.green}12`, border: `1px solid ${C.greenDim}`, borderRadius: 8 }}>{m.result.a} × {m.result.b}</span>
-                <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {ranked.map(p => {
-                  const pred = preds[p.id]?.[m.id];
-                  const pts = calcPts(pred, m.result);
-                  const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
-                  return (
-                    <div key={p.id} onClick={() => setStatsFor(p)} style={{ display: "flex", alignItems: "center", gap: 4, background: C.surface, borderRadius: 6, padding: "4px 8px", border: `1px solid ${pts != null ? (ptsColor[pts] + "55") : C.border}`, cursor: "pointer" }}>
-                      <span style={{ fontSize: 11, color: C.muted }}>{p.name.split(" ")[0]}</span>
-                      <span style={{ fontSize: 12, fontFamily: "'Bebas Neue', cursive", color: hasPred ? C.text : C.border, letterSpacing: 1 }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span>
-                      {pts != null && <PtsBadge pts={pts} />}
-                    </div>
-                  );
-                })}
-              </div>
+              {!isMobile && (
+                <>
+                  <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.gold, fontWeight: 900 }}>{p.c10 || "—"}</span>
+                  <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontWeight: 900 }}>{p.c7 || "—"}</span>
+                  <span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, fontWeight: 900 }}>{p.c5 || "—"}</span>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -631,6 +620,124 @@ function TabPlacar({ participants, matches, preds, championPts }) {
   );
 }
 
+/* ── ABA 2: VISUALIZAÇÃO DAS 12 TABELAS DA COPA E RANKING DE 3ºS ── */
+function TabTabelas({ matches }) {
+  const st = getGroupStandings(matches);
+  let thirds = [];
+  Object.keys(st).forEach(g => {
+    if (st[g][2]) thirds.push({ ...st[g][2], group: g });
+  });
+  thirds.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0);
+
+  return (
+    <div>
+      <Divider label="Classificação Oficial dos Grupos" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+        {Object.keys(st).map(g => (
+          <div key={g} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ background: C.surface, padding: "8px 12px", fontWeight: 900, color: C.gold, borderBottom: `1px solid ${C.border}`, fontSize: 14 }}>
+              GRUPO {g}
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ color: C.muted, borderBottom: `1px solid ${C.border}`, background: "#0003" }}>
+                  <th style={{ padding: "8px", textAlign: "center", width: 30 }}>#</th>
+                  <th style={{ padding: "8px", textAlign: "left" }}>Seleção</th>
+                  <th style={{ padding: "8px", textAlign: "center", width: 40 }}>Pts</th>
+                  <th style={{ padding: "8px", textAlign: "center", width: 30 }}>J</th>
+                  <th style={{ padding: "8px", textAlign: "center", width: 40 }}>SG</th>
+                </tr>
+              </thead>
+              <tbody>
+                {st[g].map((t, i) => (
+                  <tr key={t.team} style={{ borderBottom: `1px solid ${C.border}44` }}>
+                    <td style={{ padding: "8px", textAlign: "center", fontWeight: 700, color: i < 2 ? C.green : (i === 2 ? C.blue : C.muted) }}>{i + 1}</td>
+                    <td style={{ padding: "8px", fontWeight: 700, color: C.text }}>{t.team}</td>
+                    <td style={{ padding: "8px", textAlign: "center", fontWeight: 900, color: C.text }}>{t.pts}</td>
+                    <td style={{ padding: "8px", textAlign: "center", color: C.muted }}>{t.pld}</td>
+                    <td style={{ padding: "8px", textAlign: "center", color: t.gd > 0 ? C.green : (t.gd < 0 ? C.red : C.muted) }}>{t.gd > 0 ? `+${t.gd}` : t.gd}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 30 }}>
+        <Divider label="Ranking dos Terceiros Colocados (Avançam os 8 Melhores)" />
+        <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: C.surface, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
+                <th style={{ padding: "10px", textAlign: "center", width: 40 }}>#</th>
+                <th style={{ padding: "10px", textAlign: "center", width: 50 }}>Grupo</th>
+                <th style={{ padding: "10px", textAlign: "left" }}>Seleção</th>
+                <th style={{ padding: "10px", textAlign: "center", width: 60 }}>Pts</th>
+                <th style={{ padding: "10px", textAlign: "center", width: 60 }}>SG</th>
+                <th style={{ padding: "10px", textAlign: "center", width: 60 }}>GP</th>
+              </tr>
+            </thead>
+            <tbody>
+              {thirds.map((t, i) => (
+                <tr key={t.team} style={{ borderBottom: `1px solid ${C.border}44`, background: i < 8 ? `${C.blue}08` : "transparent" }}>
+                  <td style={{ padding: "10px", textAlign: "center", fontWeight: 900, color: i < 8 ? C.blue : C.muted }}>{i + 1}º</td>
+                  <td style={{ padding: "10px", textAlign: "center", color: C.muted, fontWeight: 700 }}>{t.group}</td>
+                  <td style={{ padding: "10px", fontWeight: 700, color: i < 8 ? C.text : C.muted }}>{t.team}</td>
+                  <td style={{ padding: "10px", textAlign: "center", fontWeight: 900, color: i < 8 ? C.blue : C.muted }}>{t.pts}</td>
+                  <td style={{ padding: "10px", textAlign: "center", color: C.text }}>{t.gd > 0 ? `+${t.gd}` : t.gd}</td>
+                  <td style={{ padding: "10px", textAlign: "center", color: C.text }}>{t.gf}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── ABA 3: ÁRVORE GRÁFICA DO CHAVEAMENTO DO MATA-MATA ── */
+function TabChaveamento({ matches }) {
+  const columns = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "Final"];
+  return (
+    <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
+      <div style={{ display: "flex", gap: 24, minWidth: "max-content", padding: "10px 0" }}>
+        {columns.map(ph => {
+          const ms = matches.filter(m => m.phase === ph);
+          return (
+            <div key={ph} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 240, justifyContent: "space-around" }}>
+              <div style={{ textAlign: "center", color: C.gold, fontWeight: 900, marginBottom: 8, fontSize: 13, background: C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${C.border}` }}>
+                {ph.toUpperCase()}
+              </div>
+              {ms.length === 0 ? (
+                <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>
+                  Aguardando definições...
+                </div>
+              ) : (
+                ms.map(m => (
+                  <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    {m.date && <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, marginBottom: -2 }}>{m.date}</div>}
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.a > m.result.b ? C.green : C.text }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamA}</span>
+                      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.a > m.result.b ? C.green : C.gold }}>{m.result ? m.result.a : "-"}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.b > m.result.a ? C.green : C.text }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamB}</span>
+                      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.b > m.result.a ? C.green : C.gold }}>{m.result ? m.result.b : "-"}</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── ABA 4: GERENCIAMENTO DE PERFIS E CADASTROS ── */
 function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
@@ -641,14 +748,14 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   const add = () => {
     if (!name.trim()) return alert("Por favor, digite seu nome!");
     if (pin.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!");
-    onChange([...participants, { id: uid(), name: name.trim(), paid: false, pin }]);
+    onChange([...participants, { id: uid(), name: name.trim(), paid: false, pin: pin }]);
     setName(""); setPin("");
-    if (!isAdmin) alert("Conta criada! Vá na aba Palpites para fazer login.");
+    if (!isAdmin) alert("Conta criada com sucesso! Vá na aba Palpites para fazer seu login e jogar.");
   };
 
   const startEdit = (p) => {
     if (!isAdmin) {
-      const authPin = window.prompt(`🔒 Digite a senha atual de ${p.name} para liberar a edição:`);
+      const authPin = window.prompt(`🔒 Digite a senha atual de ${p.name} para liberar a edição de cadastro:`);
       if (authPin === null) return;
       if (authPin !== p.pin) return alert("❌ Senha incorreta!");
     }
@@ -668,14 +775,14 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
     <div>
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <h3 style={{ marginBottom: 12, color: C.text, fontSize: 16 }}>
-          {isAdmin ? "⚙️ Adicionar Jogador (Admin)" : "👋 Novo por aqui? Cadastre-se"}
+          {isAdmin ? "⚙️ Adicionar Jogador Manualmente (Admin)" : "👋 Novo por aqui? Cadastre-se no Bolão"}
         </h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu Nome" style={INP({ flex: 1, minWidth: 140 })} />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Seu Nome Completo" style={INP({ flex: 1, minWidth: 140 })} />
           <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="Senha (mín. 4)" style={INP({ width: 140, textAlign: "center", letterSpacing: 2 })} />
           <button onClick={add} style={BTN()}>{isAdmin ? "+ Adicionar" : "Me Cadastrar"}</button>
         </div>
-        {!isAdmin && <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Crie sua conta e senha para registrar seus palpites. Apenas o admin aprova o pagamento.</p>}
+        {!isAdmin && <p style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Guarde sua senha para registrar e alterar seus palpites com segurança. Inscrições pendentes necessitam de validação do Pix.</p>}
       </div>
 
       {participants.map((p) => (
@@ -683,21 +790,21 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
           {editingId === p.id ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ padding: "8px 10px" })} />
-              <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="Nova senha" style={INP({ padding: "8px 10px", textAlign: "center" })} />
+              <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="Definir nova senha" style={INP({ padding: "8px 10px", textAlign: "center" })} />
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => saveEdit(p.id)} style={BTN({ flex: 1 })}>Salvar</button>
+                <button onClick={() => saveEdit(p.id)} style={BTN({ flex: 1 })}>Salvar Alterações</button>
                 <button onClick={() => setEditingId(null)} style={GHOST_BTN({ flex: 1 })}>Cancelar</button>
               </div>
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ flex: 1, fontWeight: 700, minWidth: 80 }}>{p.name}</span>
-              <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Pago" : "❌ Pendente"}</span>
+              <span style={{ flex: 1, fontWeight: 700, minWidth: 80, color: C.text }}>{p.name}</span>
+              <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Inscrição Paga" : "❌ Pix Pendente"}</span>
               <button onClick={() => startEdit(p)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>✏️ Editar</button>
               {isAdmin && (
                 <>
-                  <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>Mudar Pix</button>
-                  <button onClick={() => { if(window.confirm(`Excluir ${p.name}?`)) onDelete(p.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 24, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  <button onClick={() => togglePaid(p.id)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36, borderColor: C.gold, color: C.gold })}>Aprovar Pix</button>
+                  <button onClick={() => { if(window.confirm(`Deseja apagar permanentemente o cadastro de ${p.name}?`)) onDelete(p.id); }} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 24, minWidth: 36, minHeight: 36, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                 </>
               )}
             </div>
@@ -708,6 +815,7 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
   );
 }
 
+/* ── ABA 5: CONTROLE DE JOGOS E GERADORES AUTOMÁTICOS DA FIFA ── */
 function TabJogos({ matches, onChange, isAdmin }) {
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
@@ -724,7 +832,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
   };
 
   const gerarCopaFaseDeGrupos = () => {
-    if (!window.confirm("Deseja gerar automaticamente todos os jogos da Fase de Grupos?")) return;
+    if (!window.confirm("Deseja gerar automaticamente todos os jogos da Fase de Grupos com base nas chaves reais de 2026?")) return;
     let novosJogos = [...matches];
     let diaInicial = 11; 
     Object.entries(GRUPOS).forEach(([nome, t], gIdx) => {
@@ -735,52 +843,30 @@ function TabJogos({ matches, onChange, isAdmin }) {
       });
     });
     onChange(novosJogos);
-    alert("Fase de Grupos gerada com sucesso!");
+    alert("Grade completa de 72 partidas da Fase de Grupos inserida com sucesso!");
   };
 
-  // 🏆 O MOTOR DE CHAVEAMENTO DO MATA-MATA (Regra FIFA 48 Seleções)
   const gerarMataMata = () => {
     const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result);
     if (groupMatches.length < 72) {
-      if(!window.confirm("Atenção: Nem todos os 72 jogos da fase de grupos têm resultado ainda. O cálculo vai considerar 0 pontos para os jogos pendentes. Deseja continuar?")) return;
+      if(!window.confirm("Atenção: Nem todos os 72 confrontos dos grupos terminaram. O motor gerará o chaveamento computando os resultados parciais atuais. Avançar?")) return;
     }
 
-    // 1. Calcula a Tabela de Classificação
-    const st = {};
-    Object.keys(GRUPOS).forEach(g => { st[g] = GRUPOS[g].map(t => ({ team: t, pts: 0, gf: 0, ga: 0, gd: 0 })); });
-
-    groupMatches.forEach(m => {
-      const gA = TEAM_TO_GROUP[m.teamA.toLowerCase()], gB = TEAM_TO_GROUP[m.teamB.toLowerCase()];
-      const rA = m.result.a, rB = m.result.b;
-      if (gA && st[gA]) {
-        const t = st[gA].find(x => x.team === m.teamA);
-        if (t) { t.gf += rA; t.ga += rB; t.gd += (rA - rB); if (rA > rB) t.pts += 3; else if (rA === rB) t.pts += 1; }
-      }
-      if (gB && st[gB]) {
-        const t = st[gB].find(x => x.team === m.teamB);
-        if (t) { t.gf += rB; t.ga += rA; t.gd += (rB - rA); if (rB > rA) t.pts += 3; else if (rA === rB) t.pts += 1; }
-      }
-    });
-
-    // 2. Extrai 1º, 2º e a lista de 3ºs
+    const st = getGroupStandings(matches);
     const firsts = {}, seconds = {};
     let thirdsList = [];
     Object.keys(st).forEach(g => {
-      const sorted = st[g].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0);
-      firsts[g] = sorted[0];
-      seconds[g] = sorted[1];
-      thirdsList.push({ ...sorted[2], group: g });
+      firsts[g] = st[g][0];
+      seconds[g] = st[g][1];
+      if(st[g][2]) thirdsList.push({ ...st[g][2], group: g });
     });
-
-    // 3. Pega os 8 melhores terceiros
     thirdsList = thirdsList.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0).slice(0, 8);
 
-    // 4. Algoritmo de Combinação FIFA (Backtracking Seguro)
     const targets = ["A", "B", "D", "E", "G", "I", "K", "L"];
-    const allowed = {
-      "A": ["C","E","F","H","I"], "B": ["E","F","G","I","J"], "D": ["B","E","F","I","J"],
-      "E": ["A","B","C","D","F"], "G": ["A","E","H","I","J"], "I": ["C","D","F","G","H"],
-      "K": ["D","E","I","J","L"], "L": ["E","H","I","J","K"]
+    const allowed = { 
+      "A": ["C","E","F","H","I"], "B": ["E","F","G","I","J"], "D": ["B","E","F","I","J"], 
+      "E": ["A","B","C","D","F"], "G": ["A","E","H","I","J"], "I": ["C","D","F","G","H"], 
+      "K": ["D","E","I","J","L"], "L": ["E","H","I","J","K"] 
     };
 
     let bestAssign = null;
@@ -790,64 +876,49 @@ function TabJogos({ matches, onChange, isAdmin }) {
       const t = targets[idx];
       for (let i = 0; i < thirdsList.length; i++) {
         const th = thirdsList[i];
-        const isUsed = Object.values(current).find(x => x.team === th.team);
-        const isAllowed = allowed[t].includes(th.group);
-        // Fallback flexível: Se a matriz cruzar, pelo menos evita times do mesmo grupo
-        const isFallback = !isAllowed && th.group !== t; 
-
-        if (!isUsed && (isAllowed || isFallback)) {
+        if (!Object.values(current).find(x => x.team === th.team) && (allowed[t].includes(th.group) || th.group !== t)) {
           current[t] = th; solve(idx + 1, current); delete current[t];
         }
       }
     }
     solve(0, {});
-
-    // Salvaguarda extrema para evitar tela em branco
+    
     if (!bestAssign) {
-      bestAssign = {};
-      let available = [...thirdsList];
-      targets.forEach(t => {
-        const foundIdx = available.findIndex(x => x.group !== t);
+      bestAssign = {}; let available = [...thirdsList];
+      targets.forEach(t => { 
+        const foundIdx = available.findIndex(x => x.group !== t); 
         if (foundIdx > -1) { bestAssign[t] = available[foundIdx]; available.splice(foundIdx, 1); } 
-        else { bestAssign[t] = available[0]; available.splice(0, 1); }
+        else { bestAssign[t] = available[0]; available.splice(0, 1); } 
       });
     }
 
-    // 5. Monta a grade oficial de 32-avos
     const r32 = [
-      { tA: firsts["A"].team, tB: bestAssign["A"].team },
-      { tA: firsts["B"].team, tB: bestAssign["B"].team },
-      { tA: firsts["C"].team, tB: seconds["F"].team },
-      { tA: firsts["D"].team, tB: bestAssign["D"].team },
-      { tA: firsts["E"].team, tB: bestAssign["E"].team },
-      { tA: firsts["F"].team, tB: seconds["C"].team },
-      { tA: firsts["G"].team, tB: bestAssign["G"].team },
-      { tA: firsts["H"].team, tB: seconds["J"].team },
-      { tA: firsts["I"].team, tB: bestAssign["I"].team },
-      { tA: firsts["J"].team, tB: seconds["H"].team },
-      { tA: firsts["K"].team, tB: bestAssign["K"].team },
-      { tA: firsts["L"].team, tB: bestAssign["L"].team },
-      { tA: seconds["A"].team, tB: seconds["B"].team },
-      { tA: seconds["D"].team, tB: seconds["E"].team },
-      { tA: seconds["G"].team, tB: seconds["I"].team },
-      { tA: seconds["K"].team, tB: seconds["L"].team }
+      { tA: firsts["A"].team, tB: bestAssign["A"].team }, { tA: firsts["B"].team, tB: bestAssign["B"].team },
+      { tA: firsts["C"].team, tB: seconds["F"].team }, { tA: firsts["D"].team, tB: bestAssign["D"].team },
+      { tA: firsts["E"].team, tB: bestAssign["E"].team }, { tA: firsts["F"].team, tB: seconds["C"].team },
+      { tA: firsts["G"].team, tB: bestAssign["G"].team }, { tA: firsts["H"].team, tB: seconds["J"].team },
+      { tA: firsts["I"].team, tB: bestAssign["I"].team }, { tA: firsts["J"].team, tB: seconds["H"].team },
+      { tA: firsts["K"].team, tB: bestAssign["K"].team }, { tA: firsts["L"].team, tB: bestAssign["L"].team },
+      { tA: seconds["A"].team, tB: seconds["B"].team }, { tA: seconds["D"].team, tB: seconds["E"].team },
+      { tA: seconds["G"].team, tB: seconds["I"].team }, { tA: seconds["K"].team, tB: seconds["L"].team }
     ];
 
     const novos = [...matches];
-    r32.forEach((m, idx) => {
-      novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: `28/06 (TBD) - 16:00`, result: null });
+    r32.forEach(m => { 
+      novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: `28/06 (TBD) - 16:00`, result: null }); 
     });
-
     onChange(novos);
-    alert("🔥 Confrontos dos 32-avos calculados e gerados com sucesso!");
+    alert("🔥 Confrontos de eliminação direta (32-avos) gerados de acordo com o regulamento oficial!");
   };
 
   const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
-  const saveResult = (id) => {
-    const a = parseInt(tempR.a), b = parseInt(tempR.b);
-    if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) onChange(matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m)));
-    setEditId(null);
+  
+  const saveResult = (id) => { 
+    const a = parseInt(tempR.a), b = parseInt(tempR.b); 
+    if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) onChange(matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m))); 
+    setEditId(null); 
   };
+  
   const clearResult = (id) => { onChange(matches.map((m) => (m.id === id ? { ...m, result: null } : m))); setEditId(null); };
 
   const filtered = applyFilter(matches, filter);
@@ -858,28 +929,29 @@ function TabJogos({ matches, onChange, isAdmin }) {
       {isAdmin && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-            <h3 style={{ fontSize: 14, color: C.text }}>Painel de Criação</h3>
+            <h3 style={{ fontSize: 14, color: C.text }}>Mecanismo de Grade de Jogos</h3>
             <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
-              <button onClick={gerarCopaFaseDeGrupos} style={BTN({ background: C.surface, color: C.text, border: `1px solid ${C.border}`, fontSize: 12, padding: "6px 12px", minHeight: 32 })}>1️⃣ Gerar Grupos</button>
-              <button onClick={gerarMataMata} style={BTN({ background: C.gold, color: "#000", fontSize: 12, padding: "6px 12px", minHeight: 32 })}>⚡ Calcular 32-Avos (Mata-Mata)</button>
+              <button onClick={gerarCopaFaseDeGrupos} style={BTN({ background: C.surface, color: C.text, border: `1px solid ${C.border}`, fontSize: 12, padding: "6px 12px", minHeight: 32 })}>1️⃣ Montar Grupos</button>
+              <button onClick={gerarMataMata} style={BTN({ background: C.gold, color: "#000", fontSize: 12, padding: "6px 12px", minHeight: 32 })}>⚡ Cruzar Chaves</button>
             </div>
           </div>
-          
           <div style={{ display: "grid", gridTemplateColumns: "1fr 22px 1fr", gap: 8, alignItems: "center", marginBottom: 10 }}>
-            <input value={teamA} onChange={(e) => setTeamA(e.target.value)} placeholder="Time A" style={INP()} />
-            <div style={{ textAlign: "center", color: C.muted, fontWeight: 900, fontSize: 16 }}>×</div>
-            <input value={teamB} onChange={(e) => setTeamB(e.target.value)} placeholder="Time B" style={INP()} />
+            <input value={teamA} onChange={(e) => setTeamA(e.target.value)} placeholder="Mandante" style={INP()} />
+            <div style={{ textAlign: "center", color: C.muted, fontWeight: 900 }}>×</div>
+            <input value={teamB} onChange={(e) => setTeamB(e.target.value)} placeholder="Visitante" style={INP()} />
           </div>
           <input value={dateStr} onChange={(e) => setDateStr(e.target.value)} placeholder="Data e Horário (ex: 11/06 (Qui) - 16:00)" style={INP({ marginBottom: 10 })} />
           <div style={{ display: "flex", gap: 8 }}>
             <select value={phase} onChange={(e) => setPhase(e.target.value)} style={INP({ flex: 1 })}>{PHASES.map((p) => <option key={p} value={p}>{p}</option>)}</select>
-            <button onClick={add} style={BTN()}>+ Adicionar Jogo Manual</button>
+            <button onClick={add} style={BTN()}>+ Jogo Manual</button>
           </div>
         </div>
       )}
-      {!isAdmin && <div style={{ marginBottom: 16, color: C.gold, fontSize: 13 }}>⚠️ Apenas o administrador insere os placares oficiais.</div>}
+      {!isAdmin && <div style={{ marginBottom: 16, color: C.gold, fontSize: 13 }}>⚠️ Painel restrito. Apenas o administrador atualiza os resultados de campo.</div>}
+      
       <FilterBar active={filter} onChange={setFilter} matches={matches} />
-      {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo neste filtro." />}
+      {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo localizado sob este escopo de filtro." />}
+      
       {grouped.map(({ ph, ms }) => (
         <div key={ph} style={{ marginBottom: 24 }}>
           <Divider label={`${ph} (${ms.length})`} />
@@ -890,29 +962,28 @@ function TabJogos({ matches, onChange, isAdmin }) {
                 {editId === m.id ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{m.teamA}</span>
+                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>
                       <ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} />
                       <span style={{ color: C.muted }}>×</span>
                       <ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} />
-                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right" }}>{m.teamB}</span>
+                      <span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => saveResult(m.id)} style={BTN({ flex: 1, fontSize: 13 })}>✓ Salvar</button>
-                      <button onClick={() => clearResult(m.id)} style={GHOST_BTN({ flex: 1, color: C.red, borderColor: `${C.red}66` })}>Limpar</button>
-                      <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 20, minWidth: 36 }}>×</button>
+                      <button onClick={() => saveResult(m.id)} style={BTN({ flex: 1, fontSize: 13 })}>✓ Salvar Placar</button>
+                      <button onClick={() => clearResult(m.id)} style={GHOST_BTN({ flex: 1, color: C.red, borderColor: `${C.red}66` })}>Limpar Jogo</button>
                     </div>
                   </div>
                 ) : (
                   <>
-                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{m.teamA}</span>
+                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>
                     {m.result ? (
                       <button onClick={() => isAdmin && startEdit(m)} style={{ background: `${C.green}12`, border: `1px solid ${C.greenDim}`, borderRadius: 8, color: C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20 }}>
                         {m.result.a} × {m.result.b}
                       </button>
                     ) : (
-                      <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Resultado</button>
+                      <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>
                     )}
-                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right" }}>{m.teamB}</span>
+                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span>
                   </>
                 )}
               </div>
@@ -924,6 +995,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
   );
 }
 
+/* ── ABA 6: PORTAL DE PALPITES (PROTEÇÃO POR PIN DA SESSÃO) ── */
 function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickChampion, championPts, onSetChampionPts }) {
   const isMobile = useIsMobile();
   const [selPid, setSelPid] = useState("");
@@ -947,12 +1019,12 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
       setSessionUnlocked({ ...sessionUnlocked, [activeUser.id]: true });
     } else {
       if (activeUser.pin === pinInput) setSessionUnlocked({ ...sessionUnlocked, [activeUser.id]: true });
-      else alert("Senha incorreta!");
+      else alert("Senha de acesso incorreta!");
     }
   };
 
-  if (participants.length === 0) return <Empty icon="👥" msg="Aguardando cadastros." />;
-  if (matches.length === 0) return <Empty icon="⚽" msg="Nenhum jogo disponível." />;
+  if (participants.length === 0) return <Empty icon="👥" msg="Aguardando cadastros na aba de participantes." />;
+  if (matches.length === 0) return <Empty icon="⚽" msg="Nenhum jogo disponível na grade." />;
 
   const stats = activePid ? getStats(activePid, matches, preds) : null;
   const isUnlocked = sessionUnlocked[activePid];
@@ -968,7 +1040,6 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
   return (
     <div>
-      {/* Participant selector */}
       <div style={{ marginBottom: 16 }}>
         {isMobile ? (
           <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>
@@ -988,48 +1059,36 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
       {!isUnlocked ? (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "30px 20px", textAlign: "center", marginTop: 40 }}>
           <div style={{ fontSize: 40, marginBottom: 10 }}>🔒</div>
-          <h3 style={{ marginBottom: 8, color: C.text }}>{activeUser?.pin ? "Área Protegida" : "Crie sua Senha"}</h3>
+          <h3 style={{ marginBottom: 8, color: C.text }}>{activeUser?.pin ? "Identidade Protegida" : "Criar Senha de Validação"}</h3>
           <p style={{ fontSize: 13, color: C.muted, marginBottom: 20 }}>
-            {activeUser?.pin ? `Digite a senha do(a) ${activeUser.name} para editar os palpites.` : "Como é seu primeiro acesso, crie uma senha para proteger seus palpites."}
+            {activeUser?.pin ? `Digite a senha secreta do(a) ${activeUser.name} para abrir os inputs.` : "Este é o primeiro acesso deste perfil. Cadastre uma senha agora para travar suas alterações."}
           </p>
           <div style={{ display: "flex", gap: 10, justifyContent: "center", maxWidth: 300, margin: "0 auto" }}>
-            <input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleUnlock()} placeholder="Senha..." style={INP({ textAlign: "center", letterSpacing: 3 })} />
-            <button onClick={handleUnlock} style={BTN()}>{activeUser?.pin ? "Entrar" : "Salvar"}</button>
+            <input type="password" value={pinInput} onChange={e => setPinInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleUnlock()} placeholder="PIN" style={INP({ textAlign: "center", letterSpacing: 3 })} />
+            <button onClick={handleUnlock} style={BTN()}>{activeUser?.pin ? "Desbloquear" : "Salvar Senha"}</button>
           </div>
         </div>
       ) : (
         <>
-          {/* Stats bar */}
           {stats && (
             <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
               <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span>
-              <span style={{ color: C.muted, fontSize: 13 }}>pts</span>
+              <span style={{ color: C.muted, fontSize: 13 }}>pontos</span>
               <span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span>
               <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span>
               <span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>
               {pendingCount > 0 && (
-                <span style={{ marginLeft: "auto", background: `${C.gold}22`, color: C.gold, border: `1px solid ${C.gold}55`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>
-                  ⚠️ {pendingCount} sem palpite
+                <span style={{ marginLeft: "auto", background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>
+                  ⚠️ {pendingCount} pendentes de palpite
                 </span>
               )}
             </div>
           )}
 
-          {/* Champion pick */}
-          <ChampionSection
-            activePid={activePid}
-            participants={participants}
-            matches={matches}
-            isAdmin={isAdmin}
-            onPickChampion={onPickChampion}
-            championPts={championPts}
-            onSetChampionPts={onSetChampionPts}
-          />
-
-          <ScoringLegend />
+          <ChampionSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickChampion={onPickChampion} championPts={championPts} onSetChampionPts={onSetChampionPts} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
 
-          {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo neste filtro." />}
+          {grouped.length === 0 && <Empty icon="📅" msg="Nenhuma partida agendada neste filtro." />}
           {grouped.map(({ ph, ms }) => (
             <div key={ph} style={{ marginBottom: 24 }}>
               <Divider label={ph} />
@@ -1038,17 +1097,16 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                 const pts = m.result ? calcPts(pred, m.result) : null;
                 const locked = isLocked(m.date);
                 return (
-                  <div key={m.id} style={{ background: C.card, border: `1px solid ${locked ? C.border : C.greenDim + "55"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{locked ? " (Encerrado)" : ""}</span>}
+                  <div key={m.id} style={{ background: C.card, border: `1px solid ${locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{locked ? " (Tempo Esgotado)" : ""}</span>}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamA}</span>
+                      <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamA}</span>
                       <ScoreIn value={pred.a ?? ""} onChange={(v) => setPred(m.id, "a", v)} disabled={locked} />
                       <span style={{ color: C.muted, fontSize: 12 }}>×</span>
                       <ScoreIn value={pred.b ?? ""} onChange={(v) => setPred(m.id, "b", v)} disabled={locked} />
-                      <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
+                      <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamB}</span>
                       <PtsBadge pts={pts} />
                     </div>
-                    {/* Mural: visible as soon as result is entered */}
                     {m.result && <PostGameMural match={m} participants={participants} preds={preds} />}
                   </div>
                 );
@@ -1061,34 +1119,36 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   );
 }
 
+/* ── ABA 7: VISÃO GERAL MATRIX (TABELA DE AUDITORIA CRUZADA) ── */
 function TabVisao({ participants, matches, preds, championPts }) {
-  if (participants.length === 0) return <Empty icon="👥" msg="Adicione participantes primeiro." />;
+  if (participants.length === 0) return <Empty icon="👥" msg="Aguardando participantes." />;
   const ranked = getRanked(participants, matches, preds, championPts);
   const played = matches.filter((m) => m.result);
-  if (played.length === 0) return <Empty icon="⏳" msg="Nenhum resultado cadastrado ainda." />;
+  if (played.length === 0) return <Empty icon="⏳" msg="Nenhum jogo finalizado para auditoria geral." />;
 
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 400 }}>
+    <div style={{ overflowX: "auto", scrollbarWidth: "thin" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
         <thead>
           <tr style={{ background: C.surface }}>
-            <th style={{ padding: "8px 12px", textAlign: "left", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>Jogo</th>
-            <th style={{ padding: "8px 8px", textAlign: "center", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>Resultado</th>
-            {ranked.map((p) => <th key={p.id} style={{ padding: "8px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap", maxWidth: 80 }}>{p.name.split(" ")[0]}</th>)}
+            <th style={{ padding: "10px 12px", textAlign: "left", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}` }}>Partida</th>
+            <th style={{ padding: "10px 8px", textAlign: "center", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, width: 80 }}>Oficial</th>
+            {ranked.map((p) => <th key={p.id} style={{ padding: "10px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name.split(" ")[0]}</th>)}
           </tr>
         </thead>
         <tbody>
           {played.map((m) => (
-            <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}` }}>
-              <td style={{ padding: "8px 12px", color: C.text, whiteSpace: "nowrap" }}>{m.teamA} × {m.teamB}</td>
-              <td style={{ padding: "8px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1 }}>{m.result.a}×{m.result.b}</td>
+            <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}44` }}>
+              <td style={{ padding: "10px 12px", color: C.text, fontWeight: 600 }}>{m.teamA} × {m.teamB}</td>
+              <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002" }}>{m.result.a}×{m.result.b}</td>
               {ranked.map((p) => {
                 const pred = preds[p.id]?.[m.id];
                 const pts = calcPts(pred, m.result);
+                const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
                 return (
                   <td key={p.id} style={{ padding: "6px", textAlign: "center" }}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                      {pred && (pred.a !== "" || pred.b !== "") ? <span style={{ fontSize: 11, color: C.muted }}>{pred.a ?? "?"}×{pred.b ?? "?"}</span> : <span style={{ fontSize: 11, color: C.border }}>—</span>}
+                      <span style={{ fontSize: 11, color: hasPred ? C.text : C.border }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span>
                       <PtsBadge pts={pts} />
                     </div>
                   </td>
@@ -1102,7 +1162,7 @@ function TabVisao({ participants, matches, preds, championPts }) {
   );
 }
 
-/* ── App Shell ── */
+/* ── NÚCLEO CENTRAL DA APLICAÇÃO (APP SHELL CONTAINER) ── */
 export default function BolaoApp() {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState("placar");
@@ -1139,16 +1199,20 @@ export default function BolaoApp() {
           setPreds(objPreds);
         }
 
-        // Load champion_pts from config table
         const { data: cfg } = await supabase.from('config').select('valor').eq('chave', 'champion_pts').single();
         if (cfg?.valor) setChampionPts(parseInt(cfg.valor));
-      } catch (err) { console.error("Erro no Supabase:", err); }
+      } catch (err) { console.error("Erro na leitura das tabelas do Supabase:", err); }
       setReady(true);
     })();
   }, []);
 
   const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
-  const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
+  
+  const removeP = async (id) => { 
+    setParticipants(p => p.filter(x => x.id !== id)); 
+    await supabase.from('participantes').delete().eq('id', id); 
+  };
+  
   const sm = async (d) => {
     setMatches(d);
     await supabase.from('jogos').upsert(d.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
@@ -1185,22 +1249,29 @@ export default function BolaoApp() {
 
   const handleAdminLogin = () => {
     if (isAdmin) { setIsAdmin(false); return; }
-    const pwd = prompt("Área Restrita. Digite a senha do Administrador:");
+    const pwd = prompt("Área técnica restrita. Chave do Administrador:");
     if (pwd === "bruno2026") setIsAdmin(true);
-    else if (pwd !== null) alert("Senha incorreta!");
+    else if (pwd !== null) alert("Acesso negado: Credencial incorreta.");
   };
 
-  const showToast = () => setToast("✅ Palpite salvo!");
+  const showToast = () => {
+    if (toast) return;
+    setToast("✓ Palpite gravado na nuvem!");
+  };
 
   const TABS = [
-    { id: "placar",        label: "🏆 Placar"       },
-    { id: "participantes", label: "👥 Participantes" },
-    { id: "jogos",         label: "⚽ Jogos"         },
-    { id: "palpites",      label: "📋 Palpites"      },
-    { id: "visao",         label: "📊 Visão Geral"   },
+    { id: "placar",        label: "🏆 Placar" },
+    { id: "palpites",      label: "📋 Palpites" },
+    { id: "tabelas",       label: "📊 Tabelas" },
+    { id: "chaveamento",   label: "🌳 Chaveamento" },
+    { id: "visao",         label: "👁️ Auditoria" },
+    { id: "jogos",         label: "⚽ Painel Jogos" },
+    { id: "participantes", label: "👥 Jogadores" },
   ];
 
-  if (!ready) return <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontFamily: "sans-serif", fontSize: 18 }}>⚽ Conectando ao Banco de Dados...</div>;
+  if (!ready) {
+    return <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontFamily: "sans-serif", fontSize: 18, fontWeight: 700 }}>⚽ Sincronizando tabelas com o Supabase...</div>;
+  }
 
   return (
     <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "'Nunito', system-ui, sans-serif", color: C.text }}>
@@ -1217,26 +1288,28 @@ export default function BolaoApp() {
 
       <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10 }}>
-          <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 20 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">
-            ⚽ BOLÃO DA COPA {isAdmin && "<ADMIN>"}
+          <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">
+            ⚽ BOLÃO DA COPA 2026 {isAdmin && "<ADMIN>"}
           </div>
           <div style={{ marginLeft: "auto" }}>
-            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "3px 10px", fontWeight: 700, fontSize: isMobile ? 11 : 13 }}>
-              💰 R$ {(participants.length * 100).toLocaleString("pt-BR")}
+            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 11 : 13 }}>
+              Caixa: R$ {(participants.length * 100).toLocaleString("pt-BR")}
             </span>
           </div>
         </div>
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
           {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 11 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 12 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>
               {isMobile ? t.label.split(" ")[0] : t.label}
             </button>
           ))}
         </div>
       </div>
 
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}>
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
         {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} championPts={championPts} />}
+        {tab === "tabelas"       && <TabTabelas matches={matches} />}
+        {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
         {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
         {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickChampion={onPickChampion} championPts={championPts} onSetChampionPts={onSetChampionPts} />}
