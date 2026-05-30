@@ -63,7 +63,25 @@ function getDetailedStats(pid, matches, preds) {
   }
   const withPred = played.filter(m => { const p = preds[pid]?.[m.id]; return p && p.a !== "" && p.b !== "" && p.a != null && p.b != null; });
   const accuracy = withPred.length > 0 ? Math.round(((base.c10 + base.c7 + base.c5) / withPred.length) * 100) : 0;
-  return { ...base, bestPts, bestMatch, worstPts, worstMatch, streak, withPredCount: withPred.length, accuracy };
+
+  // Conquistas permanentes: calcula em ordem cronológica para travar no pico histórico
+  const sortedPlayed = [...played].sort((a, b) => {
+    const da = parseMatchDate(a.date), db = parseMatchDate(b.date);
+    if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db;
+  });
+  let maxStreak = 0, curr = 0, rollingCorrect = 0, rollingTotal = 0, everAccurate = false;
+  for (const m of sortedPlayed) {
+    const p = preds[pid]?.[m.id];
+    if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) { curr = 0; continue; }
+    const pts = calcPts(p, m.result);
+    if (pts == null) { curr = 0; continue; }
+    if (pts > 0) { curr++; if (curr > maxStreak) maxStreak = curr; } else curr = 0;
+    rollingTotal++;
+    if (pts >= 5) rollingCorrect++;
+    if (!everAccurate && rollingTotal >= 5 && rollingCorrect / rollingTotal >= 0.60) everAccurate = true;
+  }
+
+  return { ...base, bestPts, bestMatch, worstPts, worstMatch, streak, maxStreak, withPredCount: withPred.length, accuracy, everAccurate };
 }
 
 function getChampionWinner(matches) {
@@ -198,11 +216,11 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
   ];
   const maxCount = Math.max(...bars.map(b => b.count), 1);
   const badges = [];
-  if (stats.c10 >= 3) badges.push({ icon: "🎯", name: "Sniper", desc: "3+ exatos" });
-  if (stats.streak >= 4) badges.push({ icon: "🔥", name: "On Fire", desc: "Série de 4+ acertos" });
+  if (stats.c10 >= 3) badges.push({ icon: "🎯", name: "Sniper", desc: "3+ placares exatos" });
+  if (stats.maxStreak >= 4) badges.push({ icon: "🔥", name: "On Fire", desc: `Melhor série: ${stats.maxStreak} acertos seguidos` });
   if (stats.c0 >= 5) badges.push({ icon: "🥶", name: "Pé Frio", desc: "5+ palpites zerados" });
-  if (stats.accuracy >= 60 && stats.withPredCount >= 5) badges.push({ icon: "🔮", name: "Mãe Dináh", desc: "+60% de acerto" });
-  if (stats.withPredCount >= 20) badges.push({ icon: "🎖️", name: "Veterano", desc: "20+ palpites" });
+  if (stats.everAccurate) badges.push({ icon: "🔮", name: "Mãe Dináh", desc: "Já teve +60% de acerto" });
+  if (stats.withPredCount >= 20) badges.push({ icon: "🎖️", name: "Veterano", desc: "20+ palpites feitos" });
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
