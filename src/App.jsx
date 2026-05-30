@@ -897,7 +897,7 @@ function TabJogos({ matches, onChange, isAdmin }) {
   };
 
   const filtered = applyFilter(matches, filter);
-  const grouped = PHASES.map((ph) => ({ ph, ms: filtered.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
+  const grouped = PHASES.map((ph) => ({ ph, ms: filtered.filter((m) => m.phase === ph).sort((a, b) => { const da = parseMatchDate(a.date), db = parseMatchDate(b.date); if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db; }) })).filter((g) => g.ms.length);
 
   return (
     <div>
@@ -970,7 +970,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
     ? matches.filter(m => !isLocked(m.date) && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(a.date) - parseMatchDate(b.date)).slice(0, 8)
     : todayFiltered;
   const isFallback = filter === "hoje" && todayFiltered.length === 0 && filteredMatches.length > 0;
-  const grouped = PHASES.map((ph) => ({ ph, ms: filteredMatches.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
+  const grouped = PHASES.map((ph) => ({ ph, ms: filteredMatches.filter((m) => m.phase === ph).sort((a, b) => { const da = parseMatchDate(a.date), db = parseMatchDate(b.date); if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db; }) })).filter((g) => g.ms.length);
 
   return (
     <div>
