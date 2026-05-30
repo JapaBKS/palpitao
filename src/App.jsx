@@ -706,13 +706,14 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
       if (authPin === null) return;
       if (authPin !== p.pin) return alert("❌ Senha incorreta!");
     }
-    setEditingId(p.id); setEditName(p.name); setEditPin(p.pin);
+    setEditingId(p.id); setEditName(p.name); setEditPin("");
   };
 
   const saveEdit = (id) => {
     if (!editName.trim()) return alert("O nome não pode ficar vazio!");
-    if (editPin.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!");
-    onChange(participants.map(p => p.id === id ? { ...p, name: editName.trim(), pin: editPin } : p));
+    if (editPin && editPin.length < 4) return alert("A nova senha deve ter no mínimo 4 caracteres!");
+    const current = participants.find(p => p.id === id);
+    onChange(participants.map(p => p.id === id ? { ...p, name: editName.trim(), pin: editPin || current.pin } : p));
     setEditingId(null);
   };
 
@@ -727,12 +728,21 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
         </div>
       </div>
       {participants.map((p) => (
-        <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
+        <div key={p.id} style={{ background: C.card, border: `1px solid ${editingId === p.id ? C.green + "66" : C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8, transition: "border-color .15s" }}>
           {editingId === p.id ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ padding: "8px 10px" })} />
-              <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="Definir nova senha" style={INP({ padding: "8px 10px", textAlign: "center" })} />
-              <div style={{ display: "flex", gap: 8 }}><button onClick={() => saveEdit(p.id)} style={BTN({ flex: 1 })}>Salvar Alterações</button><button onClick={() => setEditingId(null)} style={GHOST_BTN({ flex: 1 })}>Cancelar</button></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOME</label>
+                <input value={editName} onChange={e => setEditName(e.target.value)} style={INP({ padding: "10px 12px" })} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOVA SENHA <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— deixe em branco para manter a atual</span></label>
+                <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="••••" style={INP({ padding: "10px 12px", textAlign: "center", letterSpacing: 4 })} />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => saveEdit(p.id)} style={BTN({ flex: 1 })}>✓ Salvar</button>
+                <button onClick={() => setEditingId(null)} style={GHOST_BTN({ flex: 1 })}>Cancelar</button>
+              </div>
             </div>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
