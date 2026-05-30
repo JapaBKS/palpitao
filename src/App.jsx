@@ -217,11 +217,22 @@ function StatsModal({ participant, matches, preds, onClose, championPts }) {
         </div>
         {badges.length > 0 && (
           <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Conquistas Desbloqueadas</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {badges.map(b => (
-                <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 6, background: C.card, border: `1px solid ${C.border}`, padding: "6px 10px", borderRadius: 20 }}>
-                  <span style={{ fontSize: 16 }}>{b.icon}</span><span style={{ fontSize: 11, fontWeight: 700, color: C.text }}>{b.name}</span>
+            <div style={{ fontSize: 10, color: C.gold, marginBottom: 12, fontWeight: 900, letterSpacing: 2, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+              <span>🏅</span> Conquistas Desbloqueadas
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {badges.map((b, i) => (
+                <div key={b.name} style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: `${C.gold}12`, border: `1px solid ${C.gold}55`,
+                  padding: "8px 14px", borderRadius: 20,
+                  animation: `badgePop 0.45s cubic-bezier(0.34,1.56,0.64,1) ${i * 0.14}s both, badgeGlow 1.6s ease-in-out ${i * 0.14 + 0.35}s 2`
+                }}>
+                  <span style={{ fontSize: 20 }}>{b.icon}</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: C.gold, lineHeight: 1.2 }}>{b.name}</div>
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{b.desc}</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1058,6 +1069,8 @@ export default function BolaoApp() {
         * { box-sizing: border-box; margin: 0; padding: 0; } input, select, button, textarea { font-family: 'Nunito', system-ui, sans-serif; }
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; } input[type=number] { -moz-appearance: textfield; } select { -webkit-appearance: none; appearance: none; }
         ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
+        @keyframes badgePop { 0% { transform: scale(0.3) rotate(-10deg); opacity: 0; } 65% { transform: scale(1.18) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
+        @keyframes badgeGlow { 0%,100% { box-shadow: 0 0 0px transparent; } 50% { box-shadow: 0 0 16px #ffca2866, 0 0 6px #ffca2844; } }
       `}</style>
       <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
         <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10 }}>
