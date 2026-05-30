@@ -515,31 +515,23 @@ function applyFilter(matches, filter) {
   return matches;
 }
 
-const FILTERS_MAIN = [ { id: "todos", label: "Ver Todos" }, { id: "hoje", label: "Hoje" }, { id: "grupos", label: "Grupos" }, { id: "mata", label: "Mata-Mata" } ];
-const PILL = (isActive, color = C.green) => ({ border: `1px solid ${isActive ? color : C.border}`, background: isActive ? `${color}1a` : C.card, color: isActive ? color : C.muted, borderRadius: 20, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: "inherit", whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: 4, transition: "all .15s", flexShrink: 0 });
 
 function FilterBar({ active, onChange, matches }) {
-  const isGrupoActive = active === "grupos" || active.startsWith("grupo-");
   const count = (f) => applyFilter(matches, f).length;
+  const options = [
+    { id: "todos", label: "Ver Todos" },
+    { id: "hoje", label: "Hoje" },
+    { id: "grupos", label: "Fase de Grupos" },
+    { id: "mata", label: "Mata-Mata" },
+    ...Object.keys(GRUPOS).map(letter => ({ id: `grupo-${letter}`, label: `Grupo ${letter}` })),
+  ];
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, scrollbarWidth: "none" }}>
-        {FILTERS_MAIN.map(f => {
-          const isActive = f.id === "grupos" ? isGrupoActive : active === f.id;
-          const n = f.id === "grupos" ? count("grupos") : count(f.id);
-          return <button key={f.id} onClick={() => onChange(f.id)} style={PILL(isActive)}>{f.label}<span style={{ fontSize: 10, background: isActive ? `${C.green}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{n}</span></button>;
-        })}
-      </div>
-      {isGrupoActive && (
-        <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingTop: 8, paddingBottom: 2, scrollbarWidth: "none" }}>
-          <button onClick={() => onChange("grupos")} style={PILL(active === "grupos", C.blue)}>Todos <span style={{ fontSize: 10, background: active === "grupos" ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count("grupos")}</span></button>
-          {Object.keys(GRUPOS).map(letter => {
-            const filterId = `grupo-${letter}`;
-            const isAct = active === filterId;
-            return <button key={letter} onClick={() => onChange(filterId)} style={PILL(isAct, C.blue)}>Grupo {letter} <span style={{ fontSize: 10, background: isAct ? `${C.blue}33` : C.surface, borderRadius: 10, padding: "1px 6px" }}>{count(filterId)}</span></button>;
-          })}
-        </div>
-      )}
+      <select value={active} onChange={e => onChange(e.target.value)} style={INP({ fontSize: 14, fontWeight: 700 })}>
+        {options.map(o => (
+          <option key={o.id} value={o.id}>{o.label} ({count(o.id)})</option>
+        ))}
+      </select>
     </div>
   );
 }
