@@ -832,24 +832,102 @@ function TabJogos({ matches, onChange, isAdmin }) {
   };
 
   const gerarCopaFaseDeGrupos = () => {
-    if (!window.confirm("Deseja gerar automaticamente todos os jogos da Fase de Grupos com base nas chaves reais de 2026?")) return;
-    let novosJogos = [...matches];
-    let diaInicial = 11; 
-    Object.entries(GRUPOS).forEach(([nome, t], gIdx) => {
-      const confrontos = [[t[0], t[1]], [t[2], t[3]], [t[0], t[2]], [t[1], t[3]], [t[3], t[0]], [t[1], t[2]]];
-      confrontos.forEach((c, cIdx) => {
-        const diaJogo = diaInicial + Math.floor(gIdx / 2) + Math.floor(cIdx / 2);
-        novosJogos.push({ id: uid(), teamA: c[0], teamB: c[1], phase: "Fase de Grupos", date: `${diaJogo}/06 (TBD) - 16:00`, result: null });
-      });
+    const jaTemGrupos = matches.some(m => m.phase === "Fase de Grupos");
+    if (jaTemGrupos) {
+      return alert("⚠️ Os jogos da Fase de Grupos já foram gerados! Ação bloqueada para evitar duplicações.");
+    }
+
+    if (!window.confirm("Deseja gerar a grade oficial da Copa de 2026 com os horários de Brasília?")) return;
+
+    // 🗓️ CALENDÁRIO OFICIAL 100% MAPEADO
+    const SCHEDULE_OFICIAL = [
+      { teamA: "México", teamB: "África do Sul", date: "11/06 (Qui) - 16:00" },
+      { teamA: "Coreia do Sul", teamB: "República Tcheca", date: "11/06 (Qui) - 23:00" },
+      { teamA: "Canadá", teamB: "Bósnia", date: "12/06 (Sex) - 16:00" },
+      { teamA: "Estados Unidos", teamB: "Paraguai", date: "12/06 (Sex) - 22:00" },
+      { teamA: "Austrália", teamB: "Turquia", date: "13/06 (Sáb) - 01:00" },
+      { teamA: "Catar", teamB: "Suíça", date: "13/06 (Sáb) - 16:00" },
+      { teamA: "Brasil", teamB: "Marrocos", date: "13/06 (Sáb) - 19:00" },
+      { teamA: "Haiti", teamB: "Escócia", date: "13/06 (Sáb) - 22:00" },
+      { teamA: "Alemanha", teamB: "Curaçao", date: "14/06 (Dom) - 14:00" },
+      { teamA: "Holanda", teamB: "Japão", date: "14/06 (Dom) - 17:00" },
+      { teamA: "Costa do Marfim", teamB: "Equador", date: "14/06 (Dom) - 20:00" },
+      { teamA: "Suécia", teamB: "Tunísia", date: "14/06 (Dom) - 23:00" },
+      { teamA: "Espanha", teamB: "Cabo Verde", date: "15/06 (Seg) - 13:00" },
+      { teamA: "Bélgica", teamB: "Egito", date: "15/06 (Seg) - 16:00" },
+      { teamA: "Arábia Saudita", teamB: "Uruguai", date: "15/06 (Seg) - 19:00" },
+      { teamA: "Irã", teamB: "Nova Zelândia", date: "15/06 (Seg) - 22:00" },
+      { teamA: "França", teamB: "Senegal", date: "16/06 (Ter) - 16:00" },
+      { teamA: "Bolívia/Iraque", teamB: "Noruega", date: "16/06 (Ter) - 19:00" },
+      { teamA: "Argentina", teamB: "Argélia", date: "16/06 (Ter) - 22:00" },
+      { teamA: "Áustria", teamB: "Jordânia", date: "17/06 (Qua) - 01:00" },
+      { teamA: "Portugal", teamB: "RD Congo", date: "17/06 (Qua) - 14:00" },
+      { teamA: "Inglaterra", teamB: "Croácia", date: "17/06 (Qua) - 17:00" },
+      { teamA: "Gana", teamB: "Panamá", date: "17/06 (Qua) - 20:00" },
+      { teamA: "Uzbequistão", teamB: "Colômbia", date: "17/06 (Qua) - 23:00" },
+      { teamA: "República Tcheca", teamB: "África do Sul", date: "18/06 (Qui) - 13:00" },
+      { teamA: "Suíça", teamB: "Bósnia", date: "18/06 (Qui) - 16:00" },
+      { teamA: "Canadá", teamB: "Catar", date: "18/06 (Qui) - 19:00" },
+      { teamA: "México", teamB: "Coreia do Sul", date: "18/06 (Qui) - 22:00" },
+      { teamA: "Turquia", teamB: "Paraguai", date: "19/06 (Sex) - 01:00" },
+      { teamA: "Estados Unidos", teamB: "Austrália", date: "19/06 (Sex) - 16:00" },
+      { teamA: "Escócia", teamB: "Marrocos", date: "19/06 (Sex) - 19:00" },
+      { teamA: "Brasil", teamB: "Haiti", date: "19/06 (Sex) - 22:00" },
+      { teamA: "Holanda", teamB: "Suécia", date: "20/06 (Sáb) - 14:00" },
+      { teamA: "Alemanha", teamB: "Costa do Marfim", date: "20/06 (Sáb) - 17:00" },
+      { teamA: "Equador", teamB: "Curaçao", date: "20/06 (Sáb) - 21:00" },
+      { teamA: "Tunísia", teamB: "Japão", date: "21/06 (Dom) - 01:00" },
+      { teamA: "Espanha", teamB: "Arábia Saudita", date: "21/06 (Dom) - 13:00" },
+      { teamA: "Bélgica", teamB: "Irã", date: "21/06 (Dom) - 16:00" },
+      { teamA: "Uruguai", teamB: "Cabo Verde", date: "21/06 (Dom) - 19:00" },
+      { teamA: "Nova Zelândia", teamB: "Egito", date: "21/06 (Dom) - 22:00" },
+      { teamA: "Argentina", teamB: "Áustria", date: "22/06 (Seg) - 14:00" },
+      { teamA: "França", teamB: "Bolívia/Iraque", date: "22/06 (Seg) - 18:00" },
+      { teamA: "Noruega", teamB: "Senegal", date: "22/06 (Seg) - 21:00" },
+      { teamA: "Jordânia", teamB: "Argélia", date: "23/06 (Ter) - 00:00" },
+      { teamA: "Portugal", teamB: "Uzbequistão", date: "23/06 (Ter) - 14:00" },
+      { teamA: "Inglaterra", teamB: "Gana", date: "23/06 (Ter) - 17:00" },
+      { teamA: "Panamá", teamB: "Croácia", date: "23/06 (Ter) - 20:00" },
+      { teamA: "Colômbia", teamB: "RD Congo", date: "23/06 (Ter) - 23:00" },
+      { teamA: "Suíça", teamB: "Canadá", date: "24/06 (Qua) - 16:00" },
+      { teamA: "Bósnia", teamB: "Catar", date: "24/06 (Qua) - 16:00" },
+      { teamA: "Escócia", teamB: "Brasil", date: "24/06 (Qua) - 19:00" },
+      { teamA: "Marrocos", teamB: "Haiti", date: "24/06 (Qua) - 19:00" },
+      { teamA: "República Tcheca", teamB: "México", date: "24/06 (Qua) - 22:00" },
+      { teamA: "África do Sul", teamB: "Coreia do Sul", date: "24/06 (Qua) - 22:00" },
+      { teamA: "Equador", teamB: "Alemanha", date: "25/06 (Qui) - 17:00" },
+      { teamA: "Curaçao", teamB: "Costa do Marfim", date: "25/06 (Qui) - 17:00" },
+      { teamA: "Tunísia", teamB: "Holanda", date: "25/06 (Qui) - 20:00" },
+      { teamA: "Japão", teamB: "Suécia", date: "25/06 (Qui) - 20:00" },
+      { teamA: "Turquia", teamB: "Estados Unidos", date: "25/06 (Qui) - 23:00" },
+      { teamA: "Paraguai", teamB: "Austrália", date: "25/06 (Qui) - 23:00" },
+      { teamA: "Noruega", teamB: "França", date: "26/06 (Sex) - 16:00" },
+      { teamA: "Senegal", teamB: "Bolívia/Iraque", date: "26/06 (Sex) - 16:00" },
+      { teamA: "Uruguai", teamB: "Espanha", date: "26/06 (Sex) - 21:00" },
+      { teamA: "Cabo Verde", teamB: "Arábia Saudita", date: "26/06 (Sex) - 21:00" },
+      { teamA: "Egito", teamB: "Irã", date: "27/06 (Sáb) - 00:00" },
+      { teamA: "Nova Zelândia", teamB: "Bélgica", date: "27/06 (Sáb) - 00:00" },
+      { teamA: "Panamá", teamB: "Inglaterra", date: "27/06 (Sáb) - 18:00" },
+      { teamA: "Croácia", teamB: "Gana", date: "27/06 (Sáb) - 18:00" },
+      { teamA: "Colômbia", teamB: "Portugal", date: "27/06 (Sáb) - 20:30" },
+      { teamA: "RD Congo", teamB: "Uzbequistão", date: "27/06 (Sáb) - 20:30" },
+      { teamA: "Jordânia", teamB: "Argentina", date: "27/06 (Sáb) - 23:00" },
+      { teamA: "Argélia", teamB: "Áustria", date: "27/06 (Sáb) - 23:00" }
+    ];
+
+    const novosJogos = [...matches];
+    SCHEDULE_OFICIAL.forEach(m => {
+      novosJogos.push({ id: uid(), teamA: m.teamA, teamB: m.teamB, phase: "Fase de Grupos", date: m.date, result: null });
     });
+    
     onChange(novosJogos);
-    alert("Grade completa de 72 partidas da Fase de Grupos inserida com sucesso!");
+    alert("✅ Grade oficial de 72 partidas injetada no banco de dados!");
   };
 
   const gerarMataMata = () => {
     const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result);
     if (groupMatches.length < 72) {
-      if(!window.confirm("Atenção: Nem todos os 72 confrontos dos grupos terminaram. O motor gerará o chaveamento computando os resultados parciais atuais. Avançar?")) return;
+      if(!window.confirm("Atenção: Nem todos os 72 confrontos dos grupos terminaram. O motor vai gerar a chave com os classificados atuais. Avançar?")) return;
     }
 
     const st = getGroupStandings(matches);
@@ -903,22 +981,28 @@ function TabJogos({ matches, onChange, isAdmin }) {
       { tA: seconds["G"].team, tB: seconds["I"].team }, { tA: seconds["K"].team, tB: seconds["L"].team }
     ];
 
+    // 🗓️ DATAS OFICIAIS DOS 32-AVOS 
+    const R32_DATES = [
+      "28/06 (Dom) - 16:00", "29/06 (Seg) - 14:00", "29/06 (Seg) - 17:30", "29/06 (Seg) - 22:00",
+      "30/06 (Ter) - 14:00", "30/06 (Ter) - 18:00", "30/06 (Ter) - 22:00", "01/07 (Qua) - 13:00",
+      "01/07 (Qua) - 17:00", "01/07 (Qua) - 21:00", "02/07 (Qui) - 16:00", "02/07 (Qui) - 20:00",
+      "03/07 (Sex) - 00:00", "03/07 (Sex) - 15:00", "03/07 (Sex) - 19:00", "03/07 (Sex) - 22:30"
+    ];
+
     const novos = [...matches];
-    r32.forEach(m => { 
-      novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: `28/06 (TBD) - 16:00`, result: null }); 
+    r32.forEach((m, index) => { 
+      novos.push({ id: uid(), teamA: m.tA, teamB: m.tB, phase: "32-avos de Final", date: R32_DATES[index], result: null }); 
     });
     onChange(novos);
-    alert("🔥 Confrontos de eliminação direta (32-avos) gerados de acordo com o regulamento oficial!");
+    alert("🔥 Confrontos de eliminação direta (32-avos) mapeados com sucesso nos horários de Brasília!");
   };
 
   const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
-  
   const saveResult = (id) => { 
     const a = parseInt(tempR.a), b = parseInt(tempR.b); 
     if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) onChange(matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m))); 
     setEditId(null); 
   };
-  
   const clearResult = (id) => { onChange(matches.map((m) => (m.id === id ? { ...m, result: null } : m))); setEditId(null); };
 
   const filtered = applyFilter(matches, filter);
