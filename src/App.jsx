@@ -428,7 +428,7 @@ function FilterBar({ active, onChange, matches }) {
 }
 
 /* ── Abas Principais ── */
-function TabPlacar({ participants, matches, preds, championPts }) {
+function TabPlacar({ participants, matches, preds, championPts, prevPositions }) {
   const isMobile = useIsMobile();
   const [statsFor, setStatsFor] = useState(null);
   const ranked = getRanked(participants, matches, preds, championPts);
@@ -468,6 +468,7 @@ function TabPlacar({ participants, matches, preds, championPts }) {
               <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? (isMobile ? 17 : 20) : 13, color: i >= 3 ? C.muted : undefined }}>{i < 3 ? medals[i] : `${i + 1}º`}</span>
               <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14 }}>{p.name}</span>
+                {(() => { const prev = prevPositions[p.id]; const delta = prev ? prev - (i + 1) : 0; return delta !== 0 ? <span style={{ fontSize: 10, fontWeight: 900, color: delta > 0 ? C.green : C.red, flexShrink: 0 }}>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</span> : null; })()}
                 {!p.paid && <span style={{ fontSize: 9, background: `${C.red}22`, color: C.red, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix Pendente ⚠️</span>}
                 {p.champBonus > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🏆 +{p.champBonus}</span>}
                 {isMobile && <span style={{ marginLeft: "auto", display: "flex", gap: 5, flexShrink: 0 }}>{p.c10 > 0 && <span style={{ fontSize: 10, color: C.gold }}>🎯×{p.c10}</span>}{p.c7 > 0 && <span style={{ fontSize: 10, color: C.green }}>⭐×{p.c7}</span>}</span>}
@@ -851,7 +852,11 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   const stats = activePid ? getStats(activePid, matches, preds) : null;
   const isUnlocked = sessionUnlocked[activePid];
   const pendingCount = matches.filter(m => { if (isLocked(m.date)) return false; const p = preds[activePid]?.[m.id]; return !(p && p.a !== "" && p.b !== "" && p.a != null && p.b != null); }).length;
-  const filteredMatches = applyFilter(matches, filter);
+  const todayFiltered = applyFilter(matches, filter);
+  const filteredMatches = (filter === "hoje" && todayFiltered.length === 0)
+    ? matches.filter(m => !isLocked(m.date) && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(a.date) - parseMatchDate(b.date)).slice(0, 8)
+    : todayFiltered;
+  const isFallback = filter === "hoje" && todayFiltered.length === 0 && filteredMatches.length > 0;
   const grouped = PHASES.map((ph) => ({ ph, ms: filteredMatches.filter((m) => m.phase === ph) })).filter((g) => g.ms.length);
 
   return (
@@ -870,6 +875,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
           <ChampionSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickChampion={onPickChampion} championPts={championPts} onSetChampionPts={onSetChampionPts} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
           {grouped.length === 0 && <Empty icon="📅" msg="Nenhuma partida agendada neste filtro." />}
+          {isFallback && <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, padding: "8px 12px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8 }}>📅 Sem jogos hoje — mostrando os próximos a acontecer</div>}
           {grouped.map(({ ph, ms }) => (
             <div key={ph} style={{ marginBottom: 24 }}>
               <Divider label={ph} />
@@ -950,6 +956,9 @@ export default function BolaoApp() {
   const [sessionUnlocked, setSessionUnlocked] = useState({});
   const [championPts, setChampionPts] = useState(20);
   const [toast, setToast] = useState(null);
+  const [prevPositions, setPrevPositions] = useState({});
+  const stateRef = useRef({ matches: [], participants: [], preds: {}, championPts: 20 });
+  useEffect(() => { stateRef.current = { matches, participants, preds, championPts }; });
 
   useEffect(() => {
     (async () => {
@@ -972,6 +981,29 @@ export default function BolaoApp() {
       setReady(true);
     })();
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const channel = supabase.channel('bolao-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'participantes' }, async () => {
+        const { data } = await supabase.from('participantes').select('*');
+        if (data) setParticipants(data);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
+        const { data } = await supabase.from('jogos').select('*');
+        if (data) {
+          const { participants: p, preds: pr, championPts: cp, matches: prevM } = stateRef.current;
+          setPrevPositions(getRanked(p, prevM, pr, cp).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
+          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
+        const { data } = await supabase.from('palpites').select('*');
+        if (data) { const objPreds = {}; data.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b }; }); setPreds(objPreds); }
+      })
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [ready]);
 
   const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
@@ -1032,7 +1064,7 @@ export default function BolaoApp() {
         </div>
       </div>
       <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
-        {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} championPts={championPts} />}
+        {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} championPts={championPts} prevPositions={prevPositions} />}
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
