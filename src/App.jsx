@@ -991,9 +991,9 @@ export default function BolaoApp() {
         if (data) setParticipants(data);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
+        const { participants: p, preds: pr, championPts: cp, matches: prevM } = stateRef.current;
         const { data } = await supabase.from('jogos').select('*');
         if (data) {
-          const { participants: p, preds: pr, championPts: cp, matches: prevM } = stateRef.current;
           setPrevPositions(getRanked(p, prevM, pr, cp).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
           setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
         }
@@ -1010,6 +1010,7 @@ export default function BolaoApp() {
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
     const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result); });
+    if (changed.length > 0) setPrevPositions(getRanked(participants, matches, preds, championPts).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
     setMatches(d);
     if (changed.length === 0) return;
     const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
