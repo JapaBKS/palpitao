@@ -1537,26 +1537,30 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
 function PendingPicksPanel({ participants, matches, preds, isAdmin }) {
   const [open, setOpen] = useState(true);
+  const [expanded, setExpanded] = useState({});
   // Jogos que ainda aceitam palpite (não começaram)
-  const openMatches = matches.filter(m => !isLocked(m.date) && parseMatchDate(m.date));
+  const openMatches = matches.filter(m => !isLocked(m.date) && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(a.date) - parseMatchDate(b.date));
   if (openMatches.length === 0) return null;
 
   const hasPick = (pid, mid) => { const p = preds[pid]?.[mid]; return p && p.a !== "" && p.b !== "" && p.a != null && p.b != null; };
 
   const rows = participants.map(p => {
     const missing = openMatches.filter(m => !hasPick(p.id, m.id));
-    return { id: p.id, name: p.name, missing: missing.length, total: openMatches.length };
-  }).sort((a, b) => b.missing - a.missing);
+    return { id: p.id, name: p.name, missing, missingCount: missing.length, total: openMatches.length };
+  }).sort((a, b) => b.missingCount - a.missingCount || a.name.localeCompare(b.name, "pt-BR"));
 
-  const semNada = rows.filter(r => r.missing === r.total && r.total > 0);
-  const incompletos = rows.filter(r => r.missing > 0 && r.missing < r.total);
-  const emDia = rows.filter(r => r.missing === 0);
+  const semNada = rows.filter(r => r.missingCount === r.total && r.total > 0);
+  const incompletos = rows.filter(r => r.missingCount > 0 && r.missingCount < r.total);
+  const emDia = rows.filter(r => r.missingCount === 0);
+  const devendo = [...semNada, ...incompletos];
 
   const exportCobranca = () => {
-    const faltam = rows.filter(r => r.missing > 0);
     const lines = ["⚠️ *PALPITES PENDENTES* ⚠️", `_${openMatches.length} jogo(s) ainda aberto(s) pra palpitar_`, ""];
-    if (faltam.length === 0) lines.push("✅ Todo mundo já palpitou em tudo!");
-    else faltam.forEach(r => lines.push(`• *${r.name}* — faltam ${r.missing} de ${r.total}`));
+    if (devendo.length === 0) lines.push("✅ Todo mundo já palpitou em tudo!");
+    else devendo.forEach(r => {
+      lines.push(`• *${r.name}* — faltam ${r.missingCount} de ${r.total}`);
+      r.missing.forEach(m => lines.push(`     ▫️ ${m.teamA} × ${m.teamB}`));
+    });
     lines.push("", "🔗 Entra no app e completa os palpites! ⚽");
     shareText(lines.join("\n"));
   };
@@ -1578,17 +1582,34 @@ function PendingPicksPanel({ participants, matches, preds, isAdmin }) {
             <span style={{ fontSize: 12, color: C.gold, background: `${C.gold}1a`, borderRadius: 10, padding: "3px 10px", fontWeight: 700 }}>⏳ {incompletos.length} incompletos</span>
             <span style={{ fontSize: 12, color: C.red, background: `${C.red}1a`, borderRadius: 10, padding: "3px 10px", fontWeight: 700 }}>❌ {semNada.length} sem nenhum</span>
           </div>
-          {[...semNada, ...incompletos].length > 0 ? (
+          {devendo.length > 0 ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {[...semNada, ...incompletos].map(r => (
-                <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, background: C.surface }}>
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.text }}>{r.name}</span>
-                  <div style={{ flex: 1, maxWidth: 120, height: 6, background: C.bg, borderRadius: 3, overflow: "hidden" }}>
-                    <div style={{ width: `${((r.total - r.missing) / r.total) * 100}%`, height: "100%", background: r.missing === r.total ? C.red : C.gold, borderRadius: 3 }} />
+              {devendo.map(r => {
+                const isOpen = expanded[r.id];
+                return (
+                  <div key={r.id} style={{ borderRadius: 6, background: C.surface, overflow: "hidden" }}>
+                    <button onClick={() => setExpanded(e => ({ ...e, [r.id]: !e[r.id] }))} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                      <span style={{ fontSize: 9, color: C.muted, transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block", transition: "transform .15s" }}>▶</span>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.text, textAlign: "left" }}>{r.name}</span>
+                      <div style={{ width: 80, height: 6, background: C.bg, borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${((r.total - r.missingCount) / r.total) * 100}%`, height: "100%", background: r.missingCount === r.total ? C.red : C.gold, borderRadius: 3 }} />
+                      </div>
+                      <span style={{ fontSize: 12, color: r.missingCount === r.total ? C.red : C.gold, fontWeight: 700, minWidth: 64, textAlign: "right" }}>faltam {r.missingCount}</span>
+                    </button>
+                    {isOpen && (
+                      <div style={{ padding: "0 10px 10px 27px", display: "flex", flexDirection: "column", gap: 3 }}>
+                        {r.missing.map(m => (
+                          <div key={m.id} style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ color: C.red }}>▫️</span>
+                            <span style={{ color: C.text }}>{m.teamA} × {m.teamB}</span>
+                            <span style={{ color: C.muted, fontSize: 11 }}>· {m.date?.split(" - ")[0] || m.date}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <span style={{ fontSize: 12, color: r.missing === r.total ? C.red : C.gold, fontWeight: 700, minWidth: 70, textAlign: "right" }}>faltam {r.missing}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div style={{ fontSize: 13, color: C.green, fontWeight: 700, textAlign: "center", padding: "8px 0" }}>🎉 Todo mundo palpitou em todos os jogos abertos!</div>
