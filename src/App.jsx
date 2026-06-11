@@ -758,7 +758,7 @@ function PostGameMural({ match, participants, preds }) {
   const sorted = [...participants].sort((a, b) => {
     const pa = calcPts(preds[a.id]?.[match.id], match.result) ?? -1;
     const pb = calcPts(preds[b.id]?.[match.id], match.result) ?? -1;
-    return pb - pa;
+    return pb - pa || a.name.localeCompare(b.name, "pt-BR");
   });
   return (
     <div style={{ marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
@@ -1513,6 +1513,7 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
 
 function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickSpecial }) {
   const isMobile = useIsMobile(); const [selPid, setSelPid] = useState(""); const [pinInput, setPinInput] = useState(""); const [filter, setFilter] = useState("hoje");
+  const sortedParticipants = [...participants].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
   const activePid = participants.find((p) => p.id === selPid)?.id || participants[0]?.id || "";
   const activeUser = participants.find((p) => p.id === activePid);
 
@@ -1545,7 +1546,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{participants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{participants.map((p) => (<button key={p.id} className="pill-hover" onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 24, padding: "8px 18px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minHeight: 40 }}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
+        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{sortedParticipants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{sortedParticipants.map((p) => (<button key={p.id} className="pill-hover" onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 24, padding: "8px 18px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minHeight: 40 }}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
       </div>
       {!isUnlocked ? (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "30px 20px", textAlign: "center", marginTop: 40 }}>
