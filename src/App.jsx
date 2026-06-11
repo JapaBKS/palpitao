@@ -282,6 +282,10 @@ function getGroupStageMeeting(teamA, teamB, matches) {
 
 function setupPWA() {
   try {
+    // Garante viewport-fit=cover p/ o env(safe-area-inset-*) funcionar no iPhone com notch/Dynamic Island
+    let vp = document.querySelector('meta[name="viewport"]');
+    if (!vp) { vp = document.createElement("meta"); vp.name = "viewport"; document.head.appendChild(vp); }
+    if (!/viewport-fit/.test(vp.content || "")) vp.content = "width=device-width, initial-scale=1.0, viewport-fit=cover";
     const size = 512;
     const c = document.createElement("canvas"); c.width = size; c.height = size;
     const ctx = c.getContext("2d");
@@ -1827,24 +1831,24 @@ export default function BolaoApp() {
         .btn-primary:hover { filter: brightness(1.1); }
         .pill-hover:hover { opacity: 0.85; }
       `}</style>
-      <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA 2026 {isAdmin && "<ADMIN>"}</div>
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}`, paddingTop: "env(safe-area-inset-top)" }}>
+        <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", paddingLeft: "max(14px, env(safe-area-inset-left))", paddingRight: "max(14px, env(safe-area-inset-right))", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+            <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 20 : 26, letterSpacing: isMobile ? 1.5 : 3, color: isAdmin ? C.red : C.gold, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA{isAdmin ? " <ADMIN>" : ""}</div>
             {matches.length > 0 && <NextMatchCountdown matches={matches} />}
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button onClick={() => refreshData(true)} title="Atualizar agora" aria-label="Atualizar" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, width: 36, height: 36, cursor: "pointer", color: syncing ? C.green : C.muted, fontSize: 16, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "inherit" }}>
               <span style={{ display: "inline-block", animation: syncing ? "spin 0.8s linear infinite" : "none" }}>↻</span>
             </button>
-            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14, whiteSpace: "nowrap" }}>Caixa: R$ {(participants.length * 50).toLocaleString("pt-BR")}</span>
+            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14, whiteSpace: "nowrap" }}>{isMobile ? `R$ ${(participants.length * 50).toLocaleString("pt-BR")}` : `Caixa: R$ ${(participants.length * 50).toLocaleString("pt-BR")}`}</span>
           </div>
         </div>
-        <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
+        <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
           {TABS.map((t) => <button key={t.id} className="tab-btn" onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 12 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>{isMobile ? t.label.split(" ")[0] : t.label}</button>)}
         </div>
       </div>
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingLeft: "max(12px, env(safe-area-inset-left))", paddingRight: "max(12px, env(safe-area-inset-right))", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
         {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} prevPositions={prevPositions} />}
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
