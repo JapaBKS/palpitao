@@ -120,7 +120,7 @@ function getDetailedStats(pid, matches, preds) {
 }
 
 function getChampionWinner(matches) {
-  const final = matches.find(m => m.phase === "Final" && m.result);
+  const final = matches.find(m => m.phase === "Final" && m.result && !m.live);
   if (!final) return null;
   if (final.result.a > final.result.b) return final.teamA;
   if (final.result.b > final.result.a) return final.teamB;
@@ -128,7 +128,7 @@ function getChampionWinner(matches) {
 }
 
 function getViceWinner(matches) {
-  const final = matches.find(m => m.phase === "Final" && m.result);
+  const final = matches.find(m => m.phase === "Final" && m.result && !m.live);
   if (!final) return null;
   if (final.result.a > final.result.b) return final.teamB;
   if (final.result.b > final.result.a) return final.teamA;
@@ -136,7 +136,7 @@ function getViceWinner(matches) {
 }
 
 function getThirdWinner(matches) {
-  const m = matches.find(mm => mm.phase === "3º Lugar" && mm.result);
+  const m = matches.find(mm => mm.phase === "3º Lugar" && mm.result && !mm.live);
   if (!m) return null;
   return m.result.a >= m.result.b ? m.teamA : m.teamB;
 }
@@ -146,10 +146,10 @@ const BRAZIL_PHASES = ["Fase de Grupos", "32-avos de Final", "Oitavas de Final",
 function getBrazilPhase(matches) {
   const champion = getChampionWinner(matches);
   if (champion === "Brasil") return "Campeão";
-  const finalM = matches.find(m => m.phase === "Final" && m.result);
+  const finalM = matches.find(m => m.phase === "Final" && m.result && !m.live);
   if (finalM && (finalM.teamA === "Brasil" || finalM.teamB === "Brasil")) return "Vice";
   for (const phase of ["3º Lugar", "Semifinal", "Quartas de Final", "Oitavas de Final", "32-avos de Final"]) {
-    if (matches.find(m => m.phase === phase && m.result && (m.teamA === "Brasil" || m.teamB === "Brasil"))) return phase;
+    if (matches.find(m => m.phase === phase && m.result && !m.live && (m.teamA === "Brasil" || m.teamB === "Brasil"))) return phase;
   }
   return "Fase de Grupos";
 }
@@ -239,7 +239,7 @@ Object.entries(GRUPOS).forEach(([letter, teams]) => { teams.forEach(team => { TE
 function getGroupStandings(matches) {
   const st = {};
   Object.keys(GRUPOS).forEach(g => { st[g] = GRUPOS[g].map(t => ({ team: t, pts: 0, gf: 0, ga: 0, gd: 0, pld: 0 })); });
-  const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result);
+  const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result && !m.live);
   groupMatches.forEach(m => {
     let gA = TEAM_TO_GROUP[m.teamA.toLowerCase()], gB = TEAM_TO_GROUP[m.teamB.toLowerCase()];
     if(!gA) Object.keys(TEAM_TO_GROUP).forEach(k => { if(m.teamA.toLowerCase().includes(k)) gA = TEAM_TO_GROUP[k]; });
@@ -1006,9 +1006,9 @@ function NextMatchHighlight({ matches, activePid, preds }) {
 }
 
 function LiveMatchesPanel({ matches, participants, preds }) {
-  // Jogos que já começaram (travados) mas ainda não têm resultado oficial = "em andamento"
+  // Jogos "ao vivo": placar parcial marcado pelo admin, OU já começaram sem resultado.
   const live = matches
-    .filter(m => isLocked(m.date) && !m.result && parseMatchDate(m.date))
+    .filter(m => (m.live && m.result) || (isLocked(m.date) && !m.result && parseMatchDate(m.date)))
     .sort((a, b) => parseMatchDate(b.date) - parseMatchDate(a.date));
   if (live.length === 0) return null;
   return (
@@ -1022,10 +1022,12 @@ function LiveMatchesPanel({ matches, participants, preds }) {
           <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <span style={{ flex: 1, textAlign: "right", fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamA}</span>
-              <span style={{ fontSize: 12, color: C.muted, padding: "0 6px" }}>×</span>
+              {m.result
+                ? <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: C.red, letterSpacing: 1, padding: "0 8px", minWidth: 52, textAlign: "center" }}>{m.result.a} × {m.result.b}</span>
+                : <span style={{ fontSize: 12, color: C.muted, padding: "0 6px" }}>×</span>}
               <span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
             </div>
-            <div style={{ textAlign: "center", fontSize: 10, color: C.muted, marginTop: 2 }}>{m.phase} · {m.date?.split(" - ")[0]}</div>
+            <div style={{ textAlign: "center", fontSize: 10, color: C.muted, marginTop: 2 }}>{m.phase} · {m.date?.split(" - ")[0]}{m.result ? " · placar parcial" : ""}</div>
             <PostGameMural match={m} participants={participants} preds={preds} />
           </div>
         ))}
@@ -1379,8 +1381,8 @@ function processKnockout(currentMatches) {
   
   // Helpers para puxar Vencedor (W) e Perdedor (L) dinamicamente
   const getM = (id) => nextMatches.find(m => m.id === id);
-  const getW = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamA : (m.result.b > m.result.a ? m.teamB : m.teamA)) : null; };
-  const getL = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamB : (m.result.b > m.result.a ? m.teamA : m.teamB)) : null; };
+  const getW = (id) => { const m = getM(id); return m && m.result && !m.live ? (m.result.a > m.result.b ? m.teamA : (m.result.b > m.result.a ? m.teamB : m.teamA)) : null; };
+  const getL = (id) => { const m = getM(id); return m && m.result && !m.live ? (m.result.a > m.result.b ? m.teamB : (m.result.b > m.result.a ? m.teamA : m.teamB)) : null; };
 
   // 3. Garante que todos os 104 jogos existam na tela
   K_DEF.forEach(def => {
@@ -1440,12 +1442,12 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
   };
 
   const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
-  
-  // ⚡ A MÁGICA ACONTECE AQUI: Toda vez que salva um placar, ele recalcula a árvore!
-  const saveResult = async (id) => {
+
+  // ⚡ Salva o placar. live=true → parcial (ao vivo); live=false → resultado final oficial.
+  const saveResult = async (id, live) => {
     const a = parseInt(tempR.a), b = parseInt(tempR.b);
     if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) {
-      let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: { a, b } } : m));
+      let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: { a, b }, live: !!live } : m));
       nextMatches = processKnockout(nextMatches);
       setSaving(true);
       await onChange(nextMatches);
@@ -1456,7 +1458,7 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
 
   const clearResult = (id) => {
     if (!window.confirm("Confirma limpar o resultado deste jogo?")) return;
-    let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: null } : m));
+    let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: null, live: false } : m));
     nextMatches = processKnockout(nextMatches);
     onChange(nextMatches);
     setEditId(null);
@@ -1492,15 +1494,20 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
           <Divider label={`${ph} (${ms.length})`} />
           {ms.map((m) => (
             <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "11px 14px", display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-              {m.date && <span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{isLocked(m.date) ? " (Encerrado)" : ""}</span>}
+              {m.date && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{isLocked(m.date) ? " (Encerrado)" : ""}</span>{m.live && m.result && <span style={{ fontSize: 10, fontWeight: 900, color: C.red, background: `${C.red}1a`, border: `1px solid ${C.red}55`, borderRadius: 10, padding: "1px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}</div>}
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {editId === m.id ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span><ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id)} autoFocus /><span style={{ color: C.muted }}>×</span><ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id)} /><span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></div>
-                    <div style={{ display: "flex", gap: 8 }}><button onClick={() => !saving && saveResult(m.id)} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳ Salvando..." : "✓ Salvar Placar"}</button><button onClick={() => clearResult(m.id)} disabled={saving} style={GHOST_BTN({ flex: 1, color: C.red, borderColor: `${C.red}66`, opacity: saving ? 0.5 : 1 })}>Limpar Jogo</button></div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span><ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} autoFocus /><span style={{ color: C.muted }}>×</span><ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} /><span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => !saving && saveResult(m.id, true)} style={BTN({ flex: 1, fontSize: 13, background: C.red, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "🔴 Salvar Parcial"}</button>
+                      <button onClick={() => !saving && saveResult(m.id, false)} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "✓ Finalizar"}</button>
+                    </div>
+                    <button onClick={() => clearResult(m.id)} disabled={saving} style={GHOST_BTN({ fontSize: 12, color: C.red, borderColor: `${C.red}66`, opacity: saving ? 0.5 : 1 })}>Limpar Jogo</button>
+                    <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>🔴 Parcial = tabela mexe ao vivo, mas não conta como oficial · ✓ Finalizar = resultado definitivo</div>
                   </div>
                 ) : (
-                  <><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>{m.result ? <button onClick={() => isAdmin && startEdit(m)} style={{ background: `${C.green}12`, border: `1px solid ${C.greenDim}`, borderRadius: 8, color: C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20 }}>{m.result.a} × {m.result.b}</button> : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>}<span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></>
+                  <><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>{m.result ? <button onClick={() => isAdmin && startEdit(m)} style={{ background: m.live ? `${C.red}12` : `${C.green}12`, border: `1px solid ${m.live ? C.red : C.greenDim}`, borderRadius: 8, color: m.live ? C.red : C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20 }}>{m.result.a} × {m.result.b}</button> : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>}<span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></>
                 )}
               </div>
             </div>
@@ -1761,7 +1768,7 @@ export default function BolaoApp() {
       ]);
       if (dbParticipants) setParticipants(dbParticipants);
       if (dbJogos && dbJogos.length > 0) {
-        setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
+        setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, live: j.is_live === true })));
       }
       if (dbPalpites) {
         const objPreds = {};
@@ -1805,7 +1812,7 @@ export default function BolaoApp() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
         const { data } = await supabase.from('jogos').select('*');
         if (data) {
-          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
+          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, live: j.is_live === true })));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
@@ -1819,10 +1826,17 @@ export default function BolaoApp() {
   const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
-    const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result); });
+    const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result) || (old.live === true) !== (j.live === true); });
     setMatches(d);
     if (changed.length === 0) { console.warn("sm: nenhuma mudança detectada, upsert ignorado"); return; }
-    const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
+    const rows = changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null, is_live: j.live === true }));
+    let { error } = await supabase.from('jogos').upsert(rows);
+    // Se a coluna is_live ainda não existir, tenta de novo sem ela (degradação suave)
+    if (error && /is_live/.test(error.message || "")) {
+      const rowsNoLive = rows.map(({ is_live, ...rest }) => rest);
+      ({ error } = await supabase.from('jogos').upsert(rowsNoLive));
+      if (!error) showToast("⚠️ Salvo, mas rode a migração 'is_live' p/ o modo AO VIVO sincronizar", "error");
+    }
     if (error) { console.error("❌ Supabase jogos upsert error:", error); showToast("❌ Erro ao salvar jogo no servidor!", "error"); }
     else { console.log(`✅ ${changed.length} jogo(s) salvo(s) no Supabase`); setToast({ message: "✅ Placar salvo no servidor!", type: "success" }); }
   };
