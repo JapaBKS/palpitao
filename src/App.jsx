@@ -554,7 +554,8 @@ function StatsModal({ participant, matches, preds, onClose }) {
   if (stats.withPredCount >= 1)  badges.push({ icon: "🌱", name: "Estreante",       desc: "Fez o primeiro palpite" });
   if (stats.withPredCount >= 20) badges.push({ icon: "🎖️", name: "Veterano",        desc: "20+ palpites feitos" });
   if (stats.withPredCount >= 50) badges.push({ icon: "📋", name: "Dedicado",         desc: "50+ palpites feitos" });
-  if (stats.c10 >= 3)            badges.push({ icon: "🎯", name: "Sniper",           desc: "3+ placares exatos" });
+  if (stats.c10 >= 1)            badges.push({ icon: "🎯", name: "Na Mosca",          desc: "Cravou o primeiro placar exato!" });
+  if (stats.c10 >= 3)            badges.push({ icon: "🥷", name: "Sniper",           desc: "3+ placares exatos" });
   if (stats.c10 >= 10)           badges.push({ icon: "⭐", name: "Craque",           desc: "10+ placares exatos" });
   if (stats.maxExactStreak >= 3) badges.push({ icon: "🎩", name: "Hat-trick",        desc: "3 exatos consecutivos" });
   if (stats.maxStreak >= 4)      badges.push({ icon: "🔥", name: "On Fire",          desc: `Melhor série: ${stats.maxStreak} acertos seguidos` });
