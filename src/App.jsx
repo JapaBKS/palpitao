@@ -271,15 +271,29 @@ function setupPWA() {
     const iconUrl = c.toDataURL("image/png");
     const metas = [["apple-mobile-web-app-capable", "yes"], ["apple-mobile-web-app-status-bar-style", "black-translucent"], ["apple-mobile-web-app-title", "Bolão Copa"], ["theme-color", "#06090a"], ["mobile-web-app-capable", "yes"]];
     metas.forEach(([n, ct]) => { if (!document.querySelector(`meta[name="${n}"]`)) { const m = document.createElement("meta"); m.name = n; m.content = ct; document.head.appendChild(m); } });
+    // apple-touch-icon: usa o arquivo real se existir, senão o gerado em runtime
     let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
-    if (!appleIcon) { appleIcon = document.createElement("link"); appleIcon.rel = "apple-touch-icon"; document.head.appendChild(appleIcon); }
-    appleIcon.href = iconUrl;
-    const manifest = { name: "Bolão da Copa 2026", short_name: "Bolão Copa", start_url: ".", display: "standalone", background_color: "#06090a", theme_color: "#06090a", icons: [{ src: iconUrl, sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: iconUrl, sizes: "512x512", type: "image/png", purpose: "any maskable" }] };
-    const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
-    const manifestUrl = URL.createObjectURL(blob);
-    let link = document.querySelector('link[rel="manifest"]');
-    if (!link) { link = document.createElement("link"); link.rel = "manifest"; document.head.appendChild(link); }
-    link.href = manifestUrl;
+    if (!appleIcon) {
+      appleIcon = document.createElement("link"); appleIcon.rel = "apple-touch-icon";
+      fetch("/icon-192.png", { method: "HEAD" }).then(r => { appleIcon.href = r.ok ? "/icon-192.png" : iconUrl; }).catch(() => { appleIcon.href = iconUrl; });
+      document.head.appendChild(appleIcon);
+    }
+    // manifest: prefere /manifest.json se o deploy tiver o arquivo; senão gera um via blob
+    if (!document.querySelector('link[rel="manifest"]')) {
+      fetch("/manifest.json", { method: "HEAD" }).then(r => {
+        const link = document.createElement("link"); link.rel = "manifest";
+        if (r.ok) { link.href = "/manifest.json"; }
+        else {
+          const manifest = { name: "Bolão da Copa 2026", short_name: "Bolão Copa", start_url: ".", display: "standalone", background_color: "#06090a", theme_color: "#06090a", icons: [{ src: iconUrl, sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: iconUrl, sizes: "512x512", type: "image/png", purpose: "any maskable" }] };
+          link.href = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: "application/json" }));
+        }
+        document.head.appendChild(link);
+      }).catch(() => {});
+    }
+    // service worker: registra /sw.js se existir (offline + instalável no Android)
+    if ("serviceWorker" in navigator) {
+      fetch("/sw.js", { method: "HEAD" }).then(r => { if (r.ok) navigator.serviceWorker.register("/sw.js").catch(() => {}); }).catch(() => {});
+    }
   } catch (e) { console.warn("PWA setup falhou:", e); }
 }
 
