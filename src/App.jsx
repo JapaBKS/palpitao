@@ -1535,40 +1535,108 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   );
 }
 
-function TabVisao({ participants, matches, preds }) {
+function PendingPicksPanel({ participants, matches, preds, isAdmin }) {
+  const [open, setOpen] = useState(true);
+  // Jogos que ainda aceitam palpite (não começaram)
+  const openMatches = matches.filter(m => !isLocked(m.date) && parseMatchDate(m.date));
+  if (openMatches.length === 0) return null;
+
+  const hasPick = (pid, mid) => { const p = preds[pid]?.[mid]; return p && p.a !== "" && p.b !== "" && p.a != null && p.b != null; };
+
+  const rows = participants.map(p => {
+    const missing = openMatches.filter(m => !hasPick(p.id, m.id));
+    return { id: p.id, name: p.name, missing: missing.length, total: openMatches.length };
+  }).sort((a, b) => b.missing - a.missing);
+
+  const semNada = rows.filter(r => r.missing === r.total && r.total > 0);
+  const incompletos = rows.filter(r => r.missing > 0 && r.missing < r.total);
+  const emDia = rows.filter(r => r.missing === 0);
+
+  const exportCobranca = () => {
+    const faltam = rows.filter(r => r.missing > 0);
+    const lines = ["⚠️ *PALPITES PENDENTES* ⚠️", `_${openMatches.length} jogo(s) ainda aberto(s) pra palpitar_`, ""];
+    if (faltam.length === 0) lines.push("✅ Todo mundo já palpitou em tudo!");
+    else faltam.forEach(r => lines.push(`• *${r.name}* — faltam ${r.missing} de ${r.total}`));
+    lines.push("", "🔗 Entra no app e completa os palpites! ⚽");
+    shareText(lines.join("\n"));
+  };
+
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.gold}44`, borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: "none", color: C.gold, fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+          <span style={{ fontSize: 10, transform: open ? "rotate(90deg)" : "rotate(0deg)", display: "inline-block", transition: "transform .15s" }}>▶</span>
+          📣 Pendências de Palpite ({openMatches.length} jogo{openMatches.length > 1 ? "s" : ""} aberto{openMatches.length > 1 ? "s" : ""})
+        </button>
+        {isAdmin && <button onClick={exportCobranca} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>📤 Cobrar no zap</button>}
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: C.green, background: `${C.green}1a`, borderRadius: 10, padding: "3px 10px", fontWeight: 700 }}>✅ {emDia.length} em dia</span>
+            <span style={{ fontSize: 12, color: C.gold, background: `${C.gold}1a`, borderRadius: 10, padding: "3px 10px", fontWeight: 700 }}>⏳ {incompletos.length} incompletos</span>
+            <span style={{ fontSize: 12, color: C.red, background: `${C.red}1a`, borderRadius: 10, padding: "3px 10px", fontWeight: 700 }}>❌ {semNada.length} sem nenhum</span>
+          </div>
+          {[...semNada, ...incompletos].length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {[...semNada, ...incompletos].map(r => (
+                <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, background: C.surface }}>
+                  <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: C.text }}>{r.name}</span>
+                  <div style={{ flex: 1, maxWidth: 120, height: 6, background: C.bg, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${((r.total - r.missing) / r.total) * 100}%`, height: "100%", background: r.missing === r.total ? C.red : C.gold, borderRadius: 3 }} />
+                  </div>
+                  <span style={{ fontSize: 12, color: r.missing === r.total ? C.red : C.gold, fontWeight: 700, minWidth: 70, textAlign: "right" }}>faltam {r.missing}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: C.green, fontWeight: 700, textAlign: "center", padding: "8px 0" }}>🎉 Todo mundo palpitou em todos os jogos abertos!</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabVisao({ participants, matches, preds, isAdmin }) {
   if (participants.length === 0) return <Empty icon="👥" msg="Aguardando participantes." />;
   const ranked = getRanked(participants, matches, preds);
   const played = matches.filter((m) => m.result);
-  if (played.length === 0) return <Empty icon="⏳" msg="Nenhum jogo finalizado para auditoria geral." />;
 
   return (
-    <div style={{ overflowX: "auto", scrollbarWidth: "thin" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
-        <thead>
-          <tr style={{ background: C.surface }}>
-            <th style={{ padding: "10px 12px", textAlign: "left", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}` }}>Partida</th><th style={{ padding: "10px 8px", textAlign: "center", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, width: 80 }}>Oficial</th>
-            {ranked.map((p) => <th key={p.id} style={{ padding: "10px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name.split(" ")[0]}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {played.map((m) => (
-            <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}44` }}>
-              <td style={{ padding: "10px 12px", color: C.text, fontWeight: 600 }}>{m.teamA} × {m.teamB}</td>
-              <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002" }}>{m.result.a}×{m.result.b}</td>
-              {ranked.map((p) => {
-                const pred = preds[p.id]?.[m.id];
-                const pts = calcPts(pred, m.result);
-                const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
-                return (
-                  <td key={p.id} style={{ padding: "6px", textAlign: "center" }}>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 11, color: hasPred ? C.text : C.border }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span><PtsBadge pts={pts} /></div>
-                  </td>
-                );
-              })}
+    <div>
+      <PendingPicksPanel participants={participants} matches={matches} preds={preds} isAdmin={isAdmin} />
+      {played.length === 0 ? <Empty icon="⏳" msg="Nenhum jogo finalizado para auditoria de pontos." /> : (
+      <div style={{ overflowX: "auto", scrollbarWidth: "thin" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
+          <thead>
+            <tr style={{ background: C.surface }}>
+              <th style={{ padding: "10px 12px", textAlign: "left", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}` }}>Partida</th><th style={{ padding: "10px 8px", textAlign: "center", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, width: 80 }}>Oficial</th>
+              {ranked.map((p) => <th key={p.id} style={{ padding: "10px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name.split(" ")[0]}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {played.map((m) => (
+              <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}44` }}>
+                <td style={{ padding: "10px 12px", color: C.text, fontWeight: 600 }}>{m.teamA} × {m.teamB}</td>
+                <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002" }}>{m.result.a}×{m.result.b}</td>
+                {ranked.map((p) => {
+                  const pred = preds[p.id]?.[m.id];
+                  const pts = calcPts(pred, m.result);
+                  const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
+                  return (
+                    <td key={p.id} style={{ padding: "6px", textAlign: "center" }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 11, color: hasPred ? C.text : C.border }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span><PtsBadge pts={pts} /></div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      )}
     </div>
   );
 }
@@ -1762,7 +1830,7 @@ export default function BolaoApp() {
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
         {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} onExport={exportBackup} />}
         {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />}
-        {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} />}
+        {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} isAdmin={isAdmin} />}
       </div>
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
     </div>
