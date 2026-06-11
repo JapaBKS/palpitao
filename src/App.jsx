@@ -16,6 +16,36 @@ function useIsMobile() {
   return isMobile;
 }
 
+// Mede a safe area do topo de verdade. Se estiver em PWA (standalone) num iPhone
+// com notch e o env() não cooperar, aplica um fallback seguro para não cobrir o conteúdo.
+function useSafeAreaTop() {
+  const [pad, setPad] = useState(0);
+  useEffect(() => {
+    const measure = () => {
+      // lê o valor real de env(safe-area-inset-top) via um elemento de teste
+      const probe = document.createElement("div");
+      probe.style.cssText = "position:fixed;top:0;left:0;height:env(safe-area-inset-top);width:0;visibility:hidden;pointer-events:none;";
+      document.body.appendChild(probe);
+      const measured = probe.getBoundingClientRect().height;
+      probe.remove();
+      const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+      const ios = /iphone|ipod/i.test(navigator.userAgent);
+      // Fallback: PWA em iPhone com tela "edge-to-edge" alta mas env() zerado → assume ~50px
+      let fallback = 0;
+      if (standalone && ios && measured < 20) {
+        const ratio = window.screen.height / window.screen.width;
+        if (ratio > 2 || window.screen.height >= 812) fallback = 50; // iPhone X+ com notch/Dynamic Island
+      }
+      setPad(Math.max(measured, fallback));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => { window.removeEventListener("resize", measure); window.removeEventListener("orientationchange", measure); };
+  }, []);
+  return pad;
+}
+
 /* ── Utils ── */
 let _n = 0;
 const uid = () => `${Date.now()}_${++_n}`;
@@ -1145,7 +1175,7 @@ function TabChaveamento({ matches }) {
   );
 }
 
-function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
+function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAccess, onAdminLogout }) {
   const [name, setName] = useState(""); const [pin, setPin] = useState(""); const [editingId, setEditingId] = useState(null); const [editName, setEditName] = useState(""); const [editPin, setEditPin] = useState(""); const [authingId, setAuthingId] = useState(null); const [authPin, setAuthPin] = useState(""); const [authError, setAuthError] = useState("");
 
   const add = () => {
@@ -1250,6 +1280,11 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin }) {
           </div>
         </div>
       ))}
+      <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "center" }}>
+        {isAdmin
+          ? <button onClick={onAdminLogout} style={GHOST_BTN({ padding: "8px 18px", minHeight: 40, borderColor: `${C.red}66`, color: C.red })}>🔓 Sair do modo Admin</button>
+          : <button onClick={onAdminAccess} style={GHOST_BTN({ padding: "8px 18px", minHeight: 40 })}>🔒 Acesso Administrador</button>}
+      </div>
     </div>
   );
 }
@@ -1668,6 +1703,7 @@ function TabVisao({ participants, matches, preds, isAdmin }) {
 
 export default function BolaoApp() {
   const isMobile = useIsMobile();
+  const safeTop = useSafeAreaTop();
   const [tab, setTab] = useState("placar");
   const [participants, setParticipants] = useState([]);
   const [matches, setMatches] = useState([]);
@@ -1784,10 +1820,21 @@ export default function BolaoApp() {
     } catch (e) { console.warn(e); showToast("❌ Falha ao exportar backup", "error"); }
   };
 
+  const tapRef = useRef({ count: 0, timer: null });
+  const handleAdminTap = () => {
+    if (isAdmin) return;
+    tapRef.current.count += 1;
+    clearTimeout(tapRef.current.timer);
+    if (tapRef.current.count >= 5) { tapRef.current.count = 0; promptAdmin(); return; }
+    tapRef.current.timer = setTimeout(() => { tapRef.current.count = 0; }, 1500);
+  };
+  const promptAdmin = () => {
+    const pwd = prompt("Área restrita. Chave do Administrador:");
+    if (pwd === "bruno2026") setIsAdmin(true); else if (pwd !== null) alert("Acesso negado: credencial incorreta.");
+  };
   const handleAdminLogin = () => {
     if (isAdmin) { setIsAdmin(false); return; }
-    const pwd = prompt("Área técnica restrita. Chave do Administrador:");
-    if (pwd === "bruno2026") setIsAdmin(true); else if (pwd !== null) alert("Acesso negado: Credencial incorreta.");
+    promptAdmin();
   };
 
   const showToast = (msg = "✓ Palpite gravado na nuvem!", type = "success") => {
@@ -1831,10 +1878,10 @@ export default function BolaoApp() {
         .btn-primary:hover { filter: brightness(1.1); }
         .pill-hover:hover { opacity: 0.85; }
       `}</style>
-      <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}`, paddingTop: "env(safe-area-inset-top)" }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 20, background: C.surface, borderBottom: `1px solid ${C.border}`, paddingTop: isMobile ? Math.max(safeTop, 8) : safeTop }}>
         <div style={{ padding: isMobile ? "10px 14px" : "14px 20px", paddingLeft: "max(14px, env(safe-area-inset-left))", paddingRight: "max(14px, env(safe-area-inset-right))", display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-            <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 20 : 26, letterSpacing: isMobile ? 1.5 : 3, color: isAdmin ? C.red : C.gold, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA{isAdmin ? " <ADMIN>" : ""}</div>
+            <div onClick={handleAdminTap} onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 20 : 26, letterSpacing: isMobile ? 1.5 : 3, color: isAdmin ? C.red : C.gold, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", userSelect: "none", WebkitUserSelect: "none" }} title="Toque 5x para Admin">⚽ BOLÃO DA COPA{isAdmin ? " <ADMIN>" : ""}</div>
             {matches.length > 0 && <NextMatchCountdown matches={matches} />}
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -1852,7 +1899,7 @@ export default function BolaoApp() {
         {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} prevPositions={prevPositions} />}
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
-        {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
+        {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} onAdminAccess={promptAdmin} onAdminLogout={() => setIsAdmin(false)} />}
         {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} onExport={exportBackup} />}
         {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />}
         {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} isAdmin={isAdmin} />}
