@@ -1583,31 +1583,57 @@ export default function BolaoApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionUnlocked, setSessionUnlocked] = useState({});
   const [toast, setToast] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
   const stateRef = useRef({ matches: [], participants: [], preds: {} });
   useEffect(() => { stateRef.current = { matches, participants, preds }; });
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
   useEffect(() => { setupPWA(); }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [tab]);
 
+  const refreshData = async (showSpinner = false) => {
+    if (showSpinner) setSyncing(true);
+    try {
+      const [{ data: dbParticipants }, { data: dbJogos }, { data: dbPalpites }] = await Promise.all([
+        supabase.from('participantes').select('*'),
+        supabase.from('jogos').select('*'),
+        supabase.from('palpites').select('*'),
+      ]);
+      if (dbParticipants) setParticipants(dbParticipants);
+      if (dbJogos && dbJogos.length > 0) {
+        setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
+      }
+      if (dbPalpites) {
+        const objPreds = {};
+        dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b }; });
+        setPreds(objPreds);
+      }
+      setLastSync(new Date());
+    } catch (err) { console.error("Erro ao sincronizar com o Supabase:", err); }
+    finally { if (showSpinner) setSyncing(false); }
+  };
+
+  // Carga inicial
   useEffect(() => {
-    (async () => {
-      try {
-        const { data: dbParticipants } = await supabase.from('participantes').select('*');
-        if (dbParticipants) setParticipants(dbParticipants);
-        const { data: dbJogos } = await supabase.from('jogos').select('*');
-        if (dbJogos && dbJogos.length > 0) {
-          setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
-        }
-        const { data: dbPalpites } = await supabase.from('palpites').select('*');
-        if (dbPalpites) {
-          const objPreds = {};
-          dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b }; });
-          setPreds(objPreds);
-        }
-      } catch (err) { console.error("Erro na leitura das tabelas do Supabase:", err); }
-      setReady(true);
-    })();
+    (async () => { await refreshData(); setReady(true); })();
   }, []);
+
+  // Atualiza ao voltar o foco / reconectar rede (resolve app em 2º plano, troca 4G↔WiFi)
+  useEffect(() => {
+    if (!ready) return;
+    const onFocus = () => { if (document.visibilityState === "visible") refreshData(); };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => { window.removeEventListener("focus", onFocus); window.removeEventListener("online", onFocus); document.removeEventListener("visibilitychange", onFocus); };
+  }, [ready]);
+
+  // Polling de segurança a cada 20s, só com a aba visível (cobre WebSocket caído)
+  useEffect(() => {
+    if (!ready) return;
+    const id = setInterval(() => { if (document.visibilityState === "visible") refreshData(); }, 20000);
+    return () => clearInterval(id);
+  }, [ready]);
 
   useEffect(() => {
     if (!ready) return;
@@ -1699,6 +1725,7 @@ export default function BolaoApp() {
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; } input[type=number] { -moz-appearance: textfield; } select { -webkit-appearance: none; appearance: none; }
         ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
         @keyframes badgePop { 0% { transform: scale(0.3) rotate(-10deg); opacity: 0; } 65% { transform: scale(1.18) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes badgeGlow { 0%,100% { box-shadow: 0 0 0px transparent; } 50% { box-shadow: 0 0 16px #ffca2866, 0 0 6px #ffca2844; } }
         .row-hover:hover { background: ${C.surface} !important; cursor: pointer; }
         .card-hover:hover { border-color: ${C.border} !important; }
@@ -1717,7 +1744,12 @@ export default function BolaoApp() {
             <div onDoubleClick={handleAdminLogin} style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, letterSpacing: 3, color: isAdmin ? C.red : C.gold, cursor: "pointer" }} title="Duplo clique para Admin">⚽ BOLÃO DA COPA 2026 {isAdmin && "<ADMIN>"}</div>
             {matches.length > 0 && <NextMatchCountdown matches={matches} />}
           </div>
-          <div style={{ marginLeft: "auto" }}><span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14 }}>Caixa: R$ {(participants.length * 50).toLocaleString("pt-BR")}</span></div>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => refreshData(true)} title="Atualizar agora" aria-label="Atualizar" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, width: 36, height: 36, cursor: "pointer", color: syncing ? C.green : C.muted, fontSize: 16, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "inherit" }}>
+              <span style={{ display: "inline-block", animation: syncing ? "spin 0.8s linear infinite" : "none" }}>↻</span>
+            </button>
+            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14, whiteSpace: "nowrap" }}>Caixa: R$ {(participants.length * 50).toLocaleString("pt-BR")}</span>
+          </div>
         </div>
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none" }}>
           {TABS.map((t) => <button key={t.id} className="tab-btn" onClick={() => setTab(t.id)} style={{ border: "none", cursor: "pointer", padding: isMobile ? "10px 12px" : "12px 18px", whiteSpace: "nowrap", background: "transparent", color: tab === t.id ? C.green : C.muted, borderBottom: `2px solid ${tab === t.id ? C.green : "transparent"}`, fontWeight: 700, fontSize: isMobile ? 12 : 13, fontFamily: "inherit", transition: "color .15s", flex: isMobile ? "1 0 auto" : undefined }}>{isMobile ? t.label.split(" ")[0] : t.label}</button>)}
