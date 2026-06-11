@@ -209,6 +209,119 @@ function getGroupStandings(matches) {
   return st;
 }
 
+/* ── Helpers: rodada, evolução, confronto direto ── */
+function getDayKey(dateStr) {
+  if (!dateStr) return null;
+  const m = dateStr.match(/(\d{2})\/(\d{2})/);
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
+function getRoundSummary(participants, matches, preds) {
+  const days = {};
+  matches.filter(m => m.result).forEach(m => {
+    const k = getDayKey(m.date) || "—";
+    if (!days[k]) { const d = parseMatchDate(m.date); days[k] = { time: d ? d.getTime() : 0, ms: [] }; }
+    days[k].ms.push(m);
+  });
+  const keys = Object.keys(days);
+  if (!keys.length) return null;
+  let latestKey = keys[0];
+  keys.forEach(k => { if (days[k].time >= days[latestKey].time) latestKey = k; });
+  const dayMatches = days[latestKey].ms;
+  const scores = participants.map(p => {
+    let pts = 0, exact = 0;
+    dayMatches.forEach(m => { const v = calcPts(preds[p.id]?.[m.id], m.result); if (v != null) { pts += v; if (v === 10) exact++; } });
+    return { name: p.name, id: p.id, pts, exact };
+  }).filter(s => s.pts > 0).sort((a, b) => b.pts - a.pts || b.exact - a.exact);
+  return { dayLabel: latestKey, matchCount: dayMatches.length, top: scores.slice(0, 3) };
+}
+
+function getEvolution(participants, matches, preds, topN = 6) {
+  const days = {};
+  matches.filter(m => m.result).forEach(m => {
+    const k = getDayKey(m.date) || "—";
+    if (!days[k]) { const d = parseMatchDate(m.date); days[k] = { key: k, time: d ? d.getTime() : 0, ms: [] }; }
+    days[k].ms.push(m);
+  });
+  const ordered = Object.values(days).sort((a, b) => a.time - b.time);
+  if (ordered.length < 2) return null;
+  const finalRanked = getRanked(participants, matches, preds).slice(0, topN);
+  const series = finalRanked.map(p => ({ id: p.id, name: p.name, points: [0] }));
+  const cum = {}; participants.forEach(p => { cum[p.id] = 0; });
+  ordered.forEach(day => {
+    day.ms.forEach(m => { participants.forEach(p => { const v = calcPts(preds[p.id]?.[m.id], m.result); if (v != null) cum[p.id] += v; }); });
+    series.forEach(s => s.points.push(cum[s.id]));
+  });
+  return { labels: ["Início", ...ordered.map(d => d.key)], series };
+}
+
+function getGroupStageMeeting(teamA, teamB, matches) {
+  return matches.find(m => m.phase === "Fase de Grupos" && m.result &&
+    ((m.teamA === teamA && m.teamB === teamB) || (m.teamA === teamB && m.teamB === teamA)));
+}
+
+function setupPWA() {
+  try {
+    const size = 512;
+    const c = document.createElement("canvas"); c.width = size; c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#06090a"; ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = "#ffca28"; ctx.font = "bold 300px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("⚽", size / 2, size / 2 + 20);
+    const iconUrl = c.toDataURL("image/png");
+    const metas = [["apple-mobile-web-app-capable", "yes"], ["apple-mobile-web-app-status-bar-style", "black-translucent"], ["apple-mobile-web-app-title", "Bolão Copa"], ["theme-color", "#06090a"], ["mobile-web-app-capable", "yes"]];
+    metas.forEach(([n, ct]) => { if (!document.querySelector(`meta[name="${n}"]`)) { const m = document.createElement("meta"); m.name = n; m.content = ct; document.head.appendChild(m); } });
+    let appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+    if (!appleIcon) { appleIcon = document.createElement("link"); appleIcon.rel = "apple-touch-icon"; document.head.appendChild(appleIcon); }
+    appleIcon.href = iconUrl;
+    const manifest = { name: "Bolão da Copa 2026", short_name: "Bolão Copa", start_url: ".", display: "standalone", background_color: "#06090a", theme_color: "#06090a", icons: [{ src: iconUrl, sizes: "192x192", type: "image/png", purpose: "any maskable" }, { src: iconUrl, sizes: "512x512", type: "image/png", purpose: "any maskable" }] };
+    const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
+    const manifestUrl = URL.createObjectURL(blob);
+    let link = document.querySelector('link[rel="manifest"]');
+    if (!link) { link = document.createElement("link"); link.rel = "manifest"; document.head.appendChild(link); }
+    link.href = manifestUrl;
+  } catch (e) { console.warn("PWA setup falhou:", e); }
+}
+
+function shareRanking(ranked, totalCaixa) {
+  try {
+    const top = ranked.slice(0, 5);
+    const W = 720, rowH = 88, H = 180 + top.length * rowH + 70;
+    const c = document.createElement("canvas"); c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#06090a"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#10171d"; ctx.fillRect(0, 0, W, 110);
+    ctx.fillStyle = "#ffca28"; ctx.font = "bold 40px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("🏆 BOLÃO DA COPA 2026", W / 2, 50);
+    ctx.fillStyle = "#4a6a5a"; ctx.font = "20px system-ui, sans-serif";
+    ctx.fillText(`Caixa: R$ ${totalCaixa.toLocaleString("pt-BR")}  ·  ${new Date().toLocaleDateString("pt-BR")}`, W / 2, 86);
+    const medals = ["🥇", "🥈", "🥉"];
+    const rowColors = ["#ffca28", "#90a4ae", "#ff8f00"];
+    top.forEach((p, i) => {
+      const y = 130 + i * rowH;
+      ctx.fillStyle = i < 3 ? rowColors[i] + "14" : "#10171d";
+      ctx.fillRect(20, y, W - 40, rowH - 12);
+      ctx.fillStyle = i < 3 ? rowColors[i] : "#cce8d4";
+      ctx.font = "bold 34px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(i < 3 ? medals[i] : `${i + 1}º`, 44, y + (rowH - 12) / 2);
+      ctx.fillStyle = "#cce8d4"; ctx.font = "bold 30px system-ui, sans-serif";
+      const nm = p.name.length > 22 ? p.name.slice(0, 21) + "…" : p.name;
+      ctx.fillText(nm, 110, y + (rowH - 12) / 2);
+      ctx.fillStyle = i < 3 ? rowColors[i] : "#cce8d4"; ctx.font = "bold 40px system-ui, sans-serif"; ctx.textAlign = "right";
+      ctx.fillText(String(p.total), W - 44, y + (rowH - 12) / 2);
+    });
+    ctx.fillStyle = "#4a6a5a"; ctx.font = "18px system-ui, sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("Faça seus palpites no app do Bolão ⚽", W / 2, H - 36);
+    c.toBlob(async (blob) => {
+      const file = new File([blob], "ranking-bolao.png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "Bolão da Copa 2026" }); return; } catch { /* cancelado */ }
+      }
+      const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "ranking-bolao.png"; a.click(); URL.revokeObjectURL(url);
+    }, "image/png");
+  } catch (e) { console.warn("Falha ao gerar imagem:", e); alert("Não foi possível gerar a imagem do ranking neste dispositivo."); }
+}
+
 /* ── Design tokens ── */
 const C = { bg: "#06090a", surface: "#0b1015", card: "#10171d", border: "#1b2c38", green: "#00e676", greenDim: "#00a152", gold: "#ffca28", silver: "#90a4ae", bronze: "#ff8f00", text: "#cce8d4", muted: "#4a6a5a", red: "#ff5252", blue: "#40c4ff", input: "#0c1820" };
 const INP = (extra = {}) => ({ background: C.input, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, padding: "10px 12px", fontSize: 16, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box", ...extra });
@@ -565,6 +678,118 @@ function PixSection() {
 }
 
 /* ── Abas Principais ── */
+function RoundSummary({ participants, matches, preds }) {
+  const summary = getRoundSummary(participants, matches, preds);
+  if (!summary || summary.top.length === 0) return null;
+  const medals = ["🥇", "🥈", "🥉"];
+  const champ = summary.top[0];
+  return (
+    <div style={{ background: `linear-gradient(135deg, ${C.gold}14, ${C.card})`, border: `1px solid ${C.gold}44`, borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+        <span style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>🔥 Resumo da Rodada</span>
+        <span style={{ fontSize: 11, color: C.muted }}>{summary.dayLabel} · {summary.matchCount} jogo{summary.matchCount > 1 ? "s" : ""}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: summary.top.length > 1 ? 10 : 0 }}>
+        <span style={{ fontSize: 30 }}>⭐</span>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <div style={{ fontSize: 11, color: C.muted }}>Craque da Rodada</div>
+          <div style={{ fontWeight: 900, color: C.text, fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{champ.name}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold, lineHeight: 1 }}>+{champ.pts}</div>
+          {champ.exact > 0 && <div style={{ fontSize: 10, color: C.gold }}>🎯 {champ.exact} cravada{champ.exact > 1 ? "s" : ""}</div>}
+        </div>
+      </div>
+      {summary.top.length > 1 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderTop: `1px solid ${C.gold}22`, paddingTop: 8 }}>
+          {summary.top.slice(1).map((s, i) => (
+            <span key={s.id} style={{ fontSize: 12, color: C.muted }}>{medals[i + 1]} {s.name} <span style={{ color: C.text, fontWeight: 700 }}>+{s.pts}</span></span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvolutionChart({ participants, matches, preds }) {
+  const [open, setOpen] = useState(false);
+  const data = getEvolution(participants, matches, preds, 6);
+  if (!data) return null;
+  const W = 680, H = 260, padL = 34, padR = 12, padT = 16, padB = 28;
+  const maxPts = Math.max(1, ...data.series.flatMap(s => s.points));
+  const n = data.labels.length;
+  const x = i => padL + (i / (n - 1)) * (W - padL - padR);
+  const y = v => padT + (1 - v / maxPts) * (H - padT - padB);
+  const lineColors = [C.gold, C.green, C.blue, C.bronze, "#e040fb", "#ff5252"];
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>📈 Evolução do Ranking (Top 6)</span>
+        <span style={{ fontSize: 10, transition: "transform .2s", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 12px", overflowX: "auto" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 480, display: "block" }}>
+            {[0, 0.25, 0.5, 0.75, 1].map((f, i) => (
+              <g key={i}>
+                <line x1={padL} y1={y(maxPts * f)} x2={W - padR} y2={y(maxPts * f)} stroke={C.border} strokeWidth="1" />
+                <text x={padL - 6} y={y(maxPts * f) + 4} fill={C.muted} fontSize="10" textAnchor="end">{Math.round(maxPts * f)}</text>
+              </g>
+            ))}
+            {data.series.map((s, si) => {
+              const d = s.points.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
+              return <g key={s.id}>
+                <path d={d} fill="none" stroke={lineColors[si % lineColors.length]} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+                <circle cx={x(n - 1)} cy={y(s.points[n - 1])} r="3.5" fill={lineColors[si % lineColors.length]} />
+              </g>;
+            })}
+          </svg>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, justifyContent: "center" }}>
+            {data.series.map((s, si) => (
+              <span key={s.id} style={{ fontSize: 11, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 10, height: 3, background: lineColors[si % lineColors.length], borderRadius: 2, display: "inline-block" }} />
+                {s.name} <span style={{ color: C.muted }}>({s.points[s.points.length - 1]})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NextMatchHighlight({ matches, activePid, preds }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
+  const next = matches.map(m => ({ ...m, dateObj: parseMatchDate(m.date) })).filter(m => m.dateObj && m.dateObj > now).sort((a, b) => a.dateObj - b.dateObj)[0];
+  if (!next) return null;
+  const diff = next.dateObj - now;
+  const h = Math.floor(diff / 3600000), min = Math.floor((diff % 3600000) / 60000), sec = Math.floor((diff % 60000) / 1000);
+  const fmt = h > 0 ? `${h}h ${min}m ${sec}s` : `${min}m ${sec}s`;
+  const pred = preds[activePid]?.[next.id];
+  const hasBet = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
+  const soon = diff < 30 * 60 * 1000;
+  return (
+    <div style={{ background: `linear-gradient(135deg, ${soon ? C.gold : C.greenDim}1a, ${C.card})`, border: `1px solid ${soon ? C.gold : C.greenDim}55`, borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ fontSize: 11, color: soon ? C.gold : C.greenDim, fontWeight: 900, letterSpacing: 1 }}>⚽ PRÓXIMO JOGO</span>
+        <span style={{ fontSize: 11, color: C.muted }}>{next.date}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 10 }}>
+        <span style={{ flex: 1, textAlign: "right", fontWeight: 900, fontSize: 15, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{next.teamA}</span>
+        <span style={{ fontSize: 12, color: C.muted }}>×</span>
+        <span style={{ flex: 1, textAlign: "left", fontWeight: 900, fontSize: 15, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{next.teamB}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <span style={{ fontSize: 12, color: C.muted }}>Começa em <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 18, color: soon ? C.gold : C.green, letterSpacing: 1 }}>{fmt}</span></span>
+        {hasBet
+          ? <span style={{ fontSize: 12, fontWeight: 700, color: C.green, background: `${C.green}1a`, border: `1px solid ${C.green}44`, borderRadius: 10, padding: "3px 10px" }}>✅ Você palpitou {pred.a}×{pred.b}</span>
+          : <span style={{ fontSize: 12, fontWeight: 700, color: C.gold, background: `${C.gold}1a`, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px" }}>⚠️ Sem palpite ainda!</span>}
+      </div>
+    </div>
+  );
+}
+
 function TabPlacar({ participants, matches, preds, prevPositions }) {
   const isMobile = useIsMobile();
   const [statsFor, setStatsFor] = useState(null);
@@ -594,7 +819,16 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
       </div>
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante cadastrado." />}
       {participants.some(p => !p.paid) && <PixSection />}
+      {played > 0 && <RoundSummary participants={participants} matches={matches} preds={preds} />}
+      <EvolutionChart participants={participants} matches={matches} preds={preds} />
       <ScoringLegend />
+      {ranked.length > 0 && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <button onClick={() => shareRanking(ranked, total)} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            📤 Compartilhar Ranking
+          </button>
+        </div>
+      )}
       {ranked.length > 0 && (
         <div className="card-hover" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", marginBottom: 24 }}>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
@@ -696,7 +930,9 @@ function TabChaveamento({ matches }) {
                   Aguardando definições...
                 </div>
               ) : (
-                ms.map(m => (
+                ms.map(m => {
+                  const h2h = (ph !== "Fase de Grupos") ? getGroupStageMeeting(m.teamA, m.teamB, matches) : null;
+                  return (
                   <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
                     {m.date && <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, marginBottom: -2 }}>{m.date}</div>}
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.a > m.result.b ? C.green : C.text }}>
@@ -707,8 +943,14 @@ function TabChaveamento({ matches }) {
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamB}</span>
                       <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.b > m.result.a ? C.green : C.gold }}>{m.result ? m.result.b : "-"}</span>
                     </div>
+                    {h2h && (
+                      <div style={{ fontSize: 10, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 5, marginTop: 1 }}>
+                        🔁 Já se enfrentaram nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.teamA} {h2h.result.a}×{h2h.result.b} {h2h.teamB}</span>
+                      </div>
+                    )}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           );
@@ -909,7 +1151,7 @@ function processKnockout(currentMatches) {
 }
 
 /* ── ABA 5: CONTROLE DE JOGOS E GERADORES AUTOMÁTICOS DA FIFA ── */
-function TabJogos({ matches, onChange, isAdmin }) {
+function TabJogos({ matches, onChange, isAdmin, onExport }) {
   const [teamA, setTeamA] = useState(""); const [teamB, setTeamB] = useState(""); const [dateStr, setDateStr] = useState(""); const [phase, setPhase] = useState("Fase de Grupos"); const [editId, setEditId] = useState(null); const [tempR, setTempR] = useState({ a: "", b: "" }); const [filter, setFilter] = useState("todos"); const [saving, setSaving] = useState(false);
 
   const add = () => { if (!teamA.trim() || !teamB.trim()) return; onChange([...matches, { id: uid(), teamA: teamA.trim(), teamB: teamB.trim(), phase, date: dateStr, result: null }]); setTeamA(""); setTeamB(""); setDateStr(""); };
@@ -979,8 +1221,9 @@ function TabJogos({ matches, onChange, isAdmin }) {
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, marginBottom: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
             <h3 style={{ fontSize: 14, color: C.text }}>Mecanismo de Grade de Jogos</h3>
-            <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+            <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
               <button onClick={gerarCopaCompleta} style={BTN({ background: C.gold, color: "#000", border: `1px solid ${C.border}`, fontSize: 12, padding: "6px 12px", minHeight: 32 })}>⚡ Gerar Tabela Completa (104 Jogos)</button>
+              <button onClick={onExport} style={GHOST_BTN({ fontSize: 12, padding: "6px 12px", minHeight: 32 })}>💾 Backup (JSON)</button>
             </div>
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>Dica: Se um jogo de mata-mata empatar, declare o placar final com 1 gol a mais para quem venceu nos pênaltis para que o Motor Reativo empurre a seleção correta para a próxima fase.</div>
@@ -1037,6 +1280,9 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   if (matches.length === 0) return <Empty icon="⚽" msg="Nenhum jogo disponível na grade." />;
 
   const stats = activePid ? getStats(activePid, matches, preds) : null;
+  const fullRanked = getRanked(participants, matches, preds);
+  const myRank = activePid ? fullRanked.findIndex(p => p.id === activePid) + 1 : 0;
+  const hasResults = matches.some(m => m.result);
   const isUnlocked = sessionUnlocked[activePid];
   const pendingCount = matches.filter(m => { if (isLocked(m.date)) return false; const p = preds[activePid]?.[m.id]; return !(p && p.a !== "" && p.b !== "" && p.a != null && p.b != null); }).length;
   const todayFiltered = applyFilter(matches, filter);
@@ -1058,7 +1304,8 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
         </div>
       ) : (
         <>
-          {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{(!activeUser?.paid || pendingCount > 0) && <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{!activeUser?.paid && <span style={{ background: `${C.red}1a`, color: C.red, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ Pix pendente</span>}{pendingCount > 0 && <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}</div>}
+          {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>{myRank > 0 && hasResults && <span style={{ background: myRank <= 3 ? `${C.gold}1a` : C.surface, color: myRank <= 3 ? C.gold : C.muted, border: `1px solid ${myRank <= 3 ? C.gold + "44" : C.border}`, borderRadius: 10, padding: "3px 10px", fontSize: 13, fontWeight: 900 }}>{myRank === 1 ? "🥇" : myRank === 2 ? "🥈" : myRank === 3 ? "🥉" : "#"}{myRank <= 3 ? "" : myRank}º lugar</span>}<span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{(!activeUser?.paid || pendingCount > 0) && <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{!activeUser?.paid && <span style={{ background: `${C.red}1a`, color: C.red, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ Pix pendente</span>}{pendingCount > 0 && <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}</div>}
+          <NextMatchHighlight matches={matches} activePid={activePid} preds={preds} />
           {!activeUser?.paid && <PixSection />}
           <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
@@ -1147,6 +1394,7 @@ export default function BolaoApp() {
   const stateRef = useRef({ matches: [], participants: [], preds: {} });
   useEffect(() => { stateRef.current = { matches, participants, preds }; });
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
+  useEffect(() => { setupPWA(); }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [tab]);
 
   useEffect(() => {
@@ -1216,6 +1464,18 @@ export default function BolaoApp() {
   const savePin = async (userId, pin) => { setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x)); await supabase.from('participantes').update({ pin }).eq('id', userId); };
   const onPickSpecial = async (pid, field, value) => { const updated = participants.map(p => p.id === pid ? { ...p, [field]: value } : p); setParticipants(updated); const { error } = await supabase.from('participantes').update({ [field]: value }).eq('id', pid); if (error) showToast("❌ Erro ao salvar — rode o SQL de migração no Supabase!", "error"); };
 
+  const exportBackup = () => {
+    try {
+      const data = { exportedAt: new Date().toISOString(), participants, matches, preds };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `bolao-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+      URL.revokeObjectURL(url);
+      showToast("💾 Backup exportado!");
+    } catch (e) { console.warn(e); showToast("❌ Falha ao exportar backup", "error"); }
+  };
+
   const handleAdminLogin = () => {
     if (isAdmin) { setIsAdmin(false); return; }
     const pwd = prompt("Área técnica restrita. Chave do Administrador:");
@@ -1276,7 +1536,7 @@ export default function BolaoApp() {
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} />}
-        {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} />}
+        {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} onExport={exportBackup} />}
         {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />}
         {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} />}
       </div>
