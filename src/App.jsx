@@ -863,7 +863,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
             <div key={p.id} className="row-hover" onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent", cursor: "pointer" }}>
               <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? (isMobile ? 17 : 20) : 13, color: i >= 3 ? C.muted : undefined }}>{i < 3 ? medals[i] : `${i + 1}º`}</span>
               <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14 }}>{p.name}</span>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14, minWidth: 0, flexShrink: 1 }}>{p.name}</span>
                 {(() => { const prev = prevPositions[p.id]; const delta = prev ? prev - (i + 1) : 0; return delta !== 0 ? <span style={{ fontSize: 10, fontWeight: 900, color: delta > 0 ? C.green : C.red, flexShrink: 0 }}>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</span> : null; })()}
                 {!p.paid && <span style={{ fontSize: 9, background: `${C.red}22`, color: C.red, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>Pix Pendente ⚠️</span>}
                 {(p.champBonus + p.viceBonus + p.thirdBonus + p.brazilBonus) > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🎁 +{p.champBonus + p.viceBonus + p.thirdBonus + p.brazilBonus}</span>}
@@ -1464,8 +1464,13 @@ export default function BolaoApp() {
         const { participants: p, preds: pr, matches: prevM } = stateRef.current;
         const { data } = await supabase.from('jogos').select('*');
         if (data) {
-          setPrevPositions(getRanked(p, prevM, pr).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
-          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
+          const newMatches = data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null }));
+          const oldResults = prevM.filter(m => m.result).length;
+          const newResults = newMatches.filter(m => m.result).length;
+          // Só mostra setas quando um resultado novo entrou; senão sincroniza (sem setas)
+          const base = newResults > oldResults ? prevM : newMatches;
+          setPrevPositions(getRanked(p, base, pr).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
+          setMatches(newMatches);
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
@@ -1480,7 +1485,17 @@ export default function BolaoApp() {
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
     const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result); });
-    if (changed.length > 0) setPrevPositions(getRanked(participants, matches, preds).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
+    if (changed.length > 0) {
+      const oldResults = matches.filter(m => m.result).length;
+      const newResults = d.filter(m => m.result).length;
+      if (newResults > oldResults) {
+        // Resultado NOVO foi lançado → guarda as posições anteriores para mostrar as setas
+        setPrevPositions(getRanked(participants, matches, preds).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
+      } else {
+        // Resultado apagado/editado (sem novo jogo finalizado) → zera as setas
+        setPrevPositions(getRanked(participants, d, preds).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
+      }
+    }
     setMatches(d);
     if (changed.length === 0) { console.warn("sm: nenhuma mudança detectada, upsert ignorado"); return; }
     const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
