@@ -1005,6 +1005,35 @@ function NextMatchHighlight({ matches, activePid, preds }) {
   );
 }
 
+function LiveMatchesPanel({ matches, participants, preds }) {
+  // Jogos que já começaram (travados) mas ainda não têm resultado oficial = "em andamento"
+  const live = matches
+    .filter(m => isLocked(m.date) && !m.result && parseMatchDate(m.date))
+    .sort((a, b) => parseMatchDate(b.date) - parseMatchDate(a.date));
+  if (live.length === 0) return null;
+  return (
+    <div style={{ background: `linear-gradient(135deg, ${C.red}14, ${C.card})`, border: `1px solid ${C.red}55`, borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span style={{ width: 9, height: 9, borderRadius: "50%", background: C.red, display: "inline-block", animation: "livePulse 1.2s ease-in-out infinite" }} />
+        <span style={{ fontWeight: 900, color: C.red, fontSize: 14, letterSpacing: 0.5 }}>AO VIVO — {live.length} jogo{live.length > 1 ? "s" : ""} em andamento</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {live.map(m => (
+          <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ flex: 1, textAlign: "right", fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamA}</span>
+              <span style={{ fontSize: 12, color: C.muted, padding: "0 6px" }}>×</span>
+              <span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
+            </div>
+            <div style={{ textAlign: "center", fontSize: 10, color: C.muted, marginTop: 2 }}>{m.phase} · {m.date?.split(" - ")[0]}</div>
+            <PostGameMural match={m} participants={participants} preds={preds} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TabPlacar({ participants, matches, preds, prevPositions }) {
   const isMobile = useIsMobile();
   const [statsFor, setStatsFor] = useState(null);
@@ -1034,6 +1063,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
       </div>
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante cadastrado." />}
       {participants.some(p => !p.paid) && <PixSection />}
+      <LiveMatchesPanel matches={matches} participants={participants} preds={preds} />
       {played > 0 && <RoundSummary participants={participants} matches={matches} preds={preds} />}
       <EvolutionChart participants={participants} matches={matches} preds={preds} />
       <ScoringLegend />
@@ -1866,6 +1896,7 @@ export default function BolaoApp() {
         ::-webkit-scrollbar { width: 4px; height: 4px; } ::-webkit-scrollbar-thumb { background: ${C.border}; border-radius: 2px; }
         @keyframes badgePop { 0% { transform: scale(0.3) rotate(-10deg); opacity: 0; } 65% { transform: scale(1.18) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
         @keyframes badgeGlow { 0%,100% { box-shadow: 0 0 0px transparent; } 50% { box-shadow: 0 0 16px #ffca2866, 0 0 6px #ffca2844; } }
         .row-hover:hover { background: ${C.surface} !important; cursor: pointer; }
         .card-hover:hover { border-color: ${C.border} !important; }
