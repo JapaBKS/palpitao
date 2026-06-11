@@ -154,14 +154,19 @@ function getStandingsMap(participants, matches, preds) {
   return getRanked(participants, matches, preds).reduce((acc, pl, i) => { acc[pl.id] = i + 1; return acc; }, {});
 }
 
-// "Ranking anterior" = ignora o(s) resultado(s) lançado(s) por último (maior result_at).
-// Derivado direto dos dados → compartilhado entre todos, persiste no reload, e reseta sozinho.
+// "Ranking anterior" = ranking antes do ÚLTIMO jogo com resultado (por data+hora do jogo).
+// Granularidade por jogo: a cada placar lançado, a referência avança e as setas mudam.
+// Usa a data/hora do jogo (sempre existe) → não depende de migração.
 function getPreviousMatches(matches) {
-  const withRes = matches.filter(m => m.result && m.resultAt);
+  const withRes = matches.filter(m => m.result && parseMatchDate(m.date));
   if (withRes.length === 0) return matches;
-  let maxAt = withRes[0].resultAt;
-  for (const m of withRes) if (m.resultAt > maxAt) maxAt = m.resultAt;
-  return matches.map(m => (m.resultAt === maxAt ? { ...m, result: null } : m));
+  let maxT = -Infinity;
+  withRes.forEach(m => { const t = parseMatchDate(m.date).getTime(); if (t > maxT) maxT = t; });
+  // Remove o(s) jogo(s) com a data/hora mais recente (jogos simultâneos contam juntos)
+  return matches.map(m => {
+    const d = parseMatchDate(m.date);
+    return (m.result && d && d.getTime() === maxT) ? { ...m, result: null } : m;
+  });
 }
 
 function parseMatchDate(dateStr) {
@@ -1591,7 +1596,7 @@ export default function BolaoApp() {
         if (dbParticipants) setParticipants(dbParticipants);
         const { data: dbJogos } = await supabase.from('jogos').select('*');
         if (dbJogos && dbJogos.length > 0) {
-          setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, resultAt: j.result_at || null })));
+          setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
         }
         const { data: dbPalpites } = await supabase.from('palpites').select('*');
         if (dbPalpites) {
@@ -1614,7 +1619,7 @@ export default function BolaoApp() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
         const { data } = await supabase.from('jogos').select('*');
         if (data) {
-          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, resultAt: j.result_at || null })));
+          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
@@ -1628,21 +1633,11 @@ export default function BolaoApp() {
   const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
-    // Carimba o horário do resultado: define quando entra/muda um placar, limpa quando apaga.
-    const stamped = d.map(j => {
-      const old = matches.find(m => m.id === j.id);
-      const hadResult = old && old.result;
-      const hasResult = !!j.result;
-      const resultChanged = hasResult && (!hadResult || JSON.stringify(old.result) !== JSON.stringify(j.result));
-      if (resultChanged) return { ...j, resultAt: new Date().toISOString() };
-      if (!hasResult) return { ...j, resultAt: null };
-      return { ...j, resultAt: j.resultAt ?? (old ? old.resultAt : null) ?? null };
-    });
-    const changed = stamped.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result) || (old.resultAt || null) !== (j.resultAt || null); });
-    setMatches(stamped);
+    const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result); });
+    setMatches(d);
     if (changed.length === 0) { console.warn("sm: nenhuma mudança detectada, upsert ignorado"); return; }
-    const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null, result_at: j.resultAt || null })));
-    if (error) { console.error("❌ Supabase jogos upsert error:", error); showToast("❌ Erro ao salvar jogo no servidor! (rode a migração result_at)", "error"); }
+    const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
+    if (error) { console.error("❌ Supabase jogos upsert error:", error); showToast("❌ Erro ao salvar jogo no servidor!", "error"); }
     else { console.log(`✅ ${changed.length} jogo(s) salvo(s) no Supabase`); setToast({ message: "✅ Placar salvo no servidor!", type: "success" }); }
   };
 
