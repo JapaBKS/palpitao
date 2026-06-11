@@ -310,22 +310,40 @@ function buildRankingText(ranked, totalCaixa) {
   return lines.join("\n");
 }
 
-async function shareRanking(ranked, totalCaixa) {
-  const text = buildRankingText(ranked, totalCaixa);
-  // 1) Web Share API (abre o seletor nativo → WhatsApp direto no celular)
+// Monta o texto dos palpites de TODOS os jogadores nos jogos visíveis (já travados/iniciados).
+function buildRoundPicksText(matches, participants, preds, dayLabel) {
+  const lines = [];
+  lines.push("⚽ *PALPITES DA RODADA* ⚽");
+  if (dayLabel) lines.push(`_${dayLabel}_`);
+  lines.push("");
+  matches.forEach((m) => {
+    const placar = m.result ? `  (Final: ${m.result.a}×${m.result.b})` : "";
+    lines.push(`*${m.teamA} × ${m.teamB}*${placar}`);
+    participants.forEach((p) => {
+      const pr = preds[p.id]?.[m.id];
+      const has = pr && pr.a !== "" && pr.b !== "" && pr.a != null && pr.b != null;
+      if (has) {
+        const pts = m.result ? calcPts(pr, m.result) : null;
+        const tag = pts != null ? `  ➜ ${pts}pts` : "";
+        lines.push(`• ${p.name}: ${pr.a}×${pr.b}${tag}`);
+      }
+    });
+    lines.push("");
+  });
+  return lines.join("\n").trim();
+}
+
+async function shareText(text) {
   if (navigator.share) {
     try { await navigator.share({ text }); return; } catch (e) { if (e && e.name === "AbortError") return; }
   }
-  // 2) Copiar pra área de transferência
-  try {
-    await navigator.clipboard.writeText(text);
-    alert("✅ Ranking copiado! É só colar no WhatsApp.");
-    return;
-  } catch { /* segue pro fallback */ }
-  // 3) Último recurso: abre o WhatsApp com o texto já preenchido
-  try {
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-  } catch (e) { console.warn("Falha ao compartilhar:", e); alert("Não foi possível compartilhar neste dispositivo."); }
+  try { await navigator.clipboard.writeText(text); alert("✅ Copiado! É só colar no WhatsApp."); return; } catch { /* fallback */ }
+  try { window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank"); }
+  catch (e) { console.warn("Falha ao compartilhar:", e); alert("Não foi possível compartilhar neste dispositivo."); }
+}
+
+async function shareRanking(ranked, totalCaixa) {
+  await shareText(buildRankingText(ranked, totalCaixa));
 }
 
 /* ── Design tokens ── */
@@ -558,7 +576,7 @@ function PostGameMural({ match, participants, preds }) {
     <div style={{ marginTop: 8, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
       <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 6, color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", padding: "4px 10px", display: "flex", alignItems: "center", gap: 4, fontWeight: 700, marginTop: 4 }}>
         <span style={{ fontSize: 9, display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .15s" }}>▶</span>
-        {open ? "Ocultar lista de palpites" : "Ver palpites de todos os participantes"}
+        {open ? "Ocultar lista de palpites" : match.result ? "Ver palpites de todos os participantes" : "👀 Ver palpites de todos (jogo em andamento)"}
       </button>
       {open && (
         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
@@ -1315,6 +1333,18 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
           {!activeUser?.paid && <PixSection />}
           <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
+          {(() => {
+            const exportable = filteredMatches.filter(m => isLocked(m.date) || m.result);
+            if (exportable.length === 0) return null;
+            const dayLabel = filter === "hoje" ? "Jogos de hoje" : filter === "todos" ? "Todas as fases" : null;
+            return (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+                <button onClick={() => shareText(buildRoundPicksText(exportable, participants, preds, dayLabel))} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  📋 Exportar palpites desta rodada
+                </button>
+              </div>
+            );
+          })()}
           {grouped.length === 0 && <Empty icon="📅" msg="Nenhuma partida agendada neste filtro." />}
           {isFallback && <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, padding: "8px 12px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8 }}>📅 Sem jogos hoje — mostrando os próximos a acontecer</div>}
           {grouped.map(({ ph, ms }) => (
@@ -1336,7 +1366,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamB}</span>
                       <PtsBadge pts={pts} />
                     </div>
-                    {m.result && <PostGameMural match={m} participants={participants} preds={preds} />}
+                    {(locked || m.result) && <PostGameMural match={m} participants={participants} preds={preds} />}
                   </div>
                 );
               })}
