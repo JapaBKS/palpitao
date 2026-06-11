@@ -149,6 +149,21 @@ function getRanked(participants, matches, preds, championPts = CHAMPION_PTS) {
     .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5 || a.name.localeCompare(b.name, 'pt-BR'));
 }
 
+// Mapa { participanteId: posição } a partir de um conjunto de jogos.
+function getStandingsMap(participants, matches, preds) {
+  return getRanked(participants, matches, preds).reduce((acc, pl, i) => { acc[pl.id] = i + 1; return acc; }, {});
+}
+
+// "Ranking anterior" = ignora o(s) resultado(s) lançado(s) por último (maior result_at).
+// Derivado direto dos dados → compartilhado entre todos, persiste no reload, e reseta sozinho.
+function getPreviousMatches(matches) {
+  const withRes = matches.filter(m => m.result && m.resultAt);
+  if (withRes.length === 0) return matches;
+  let maxAt = withRes[0].resultAt;
+  for (const m of withRes) if (m.resultAt > maxAt) maxAt = m.resultAt;
+  return matches.map(m => (m.resultAt === maxAt ? { ...m, result: null } : m));
+}
+
 function parseMatchDate(dateStr) {
   if (!dateStr || dateStr.includes("TBD")) return null;
   try {
@@ -1426,7 +1441,6 @@ export default function BolaoApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionUnlocked, setSessionUnlocked] = useState({});
   const [toast, setToast] = useState(null);
-  const [prevPositions, setPrevPositions] = useState({});
   const stateRef = useRef({ matches: [], participants: [], preds: {} });
   useEffect(() => { stateRef.current = { matches, participants, preds }; });
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
@@ -1440,7 +1454,7 @@ export default function BolaoApp() {
         if (dbParticipants) setParticipants(dbParticipants);
         const { data: dbJogos } = await supabase.from('jogos').select('*');
         if (dbJogos && dbJogos.length > 0) {
-          setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null })));
+          setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, resultAt: j.result_at || null })));
         }
         const { data: dbPalpites } = await supabase.from('palpites').select('*');
         if (dbPalpites) {
@@ -1461,16 +1475,9 @@ export default function BolaoApp() {
         if (data) setParticipants(data);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
-        const { participants: p, preds: pr, matches: prevM } = stateRef.current;
         const { data } = await supabase.from('jogos').select('*');
         if (data) {
-          const newMatches = data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null }));
-          const oldResults = prevM.filter(m => m.result).length;
-          const newResults = newMatches.filter(m => m.result).length;
-          // Só mostra setas quando um resultado novo entrou; senão sincroniza (sem setas)
-          const base = newResults > oldResults ? prevM : newMatches;
-          setPrevPositions(getRanked(p, base, pr).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
-          setMatches(newMatches);
+          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, resultAt: j.result_at || null })));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
@@ -1484,22 +1491,21 @@ export default function BolaoApp() {
   const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
-    const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result); });
-    if (changed.length > 0) {
-      const oldResults = matches.filter(m => m.result).length;
-      const newResults = d.filter(m => m.result).length;
-      if (newResults > oldResults) {
-        // Resultado NOVO foi lançado → guarda as posições anteriores para mostrar as setas
-        setPrevPositions(getRanked(participants, matches, preds).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
-      } else {
-        // Resultado apagado/editado (sem novo jogo finalizado) → zera as setas
-        setPrevPositions(getRanked(participants, d, preds).reduce((acc, pl, i) => ({ ...acc, [pl.id]: i + 1 }), {}));
-      }
-    }
-    setMatches(d);
+    // Carimba o horário do resultado: define quando entra/muda um placar, limpa quando apaga.
+    const stamped = d.map(j => {
+      const old = matches.find(m => m.id === j.id);
+      const hadResult = old && old.result;
+      const hasResult = !!j.result;
+      const resultChanged = hasResult && (!hadResult || JSON.stringify(old.result) !== JSON.stringify(j.result));
+      if (resultChanged) return { ...j, resultAt: new Date().toISOString() };
+      if (!hasResult) return { ...j, resultAt: null };
+      return { ...j, resultAt: j.resultAt ?? (old ? old.resultAt : null) ?? null };
+    });
+    const changed = stamped.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result) || (old.resultAt || null) !== (j.resultAt || null); });
+    setMatches(stamped);
     if (changed.length === 0) { console.warn("sm: nenhuma mudança detectada, upsert ignorado"); return; }
-    const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null })));
-    if (error) { console.error("❌ Supabase jogos upsert error:", error); showToast("❌ Erro ao salvar jogo no servidor!", "error"); }
+    const { error } = await supabase.from('jogos').upsert(changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null, result_at: j.resultAt || null })));
+    if (error) { console.error("❌ Supabase jogos upsert error:", error); showToast("❌ Erro ao salvar jogo no servidor! (rode a migração result_at)", "error"); }
     else { console.log(`✅ ${changed.length} jogo(s) salvo(s) no Supabase`); setToast({ message: "✅ Placar salvo no servidor!", type: "success" }); }
   };
 
@@ -1537,6 +1543,9 @@ export default function BolaoApp() {
     if (type === "success" && toast) return;
     setToast({ message: msg, type });
   };
+
+  // Ranking anterior (sem o último resultado) → base das setinhas de movimentação.
+  const prevPositions = getStandingsMap(participants, getPreviousMatches(matches), preds);
 
   const TABS = [
     { id: "placar", label: "🏆 Placar" },
