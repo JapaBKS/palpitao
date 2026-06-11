@@ -146,7 +146,7 @@ function getRanked(participants, matches, preds, championPts = CHAMPION_PTS) {
       const brazilBonus = (brazilKnockoutPlayed && p.brazil_pick && p.brazil_pick === actualBrazilPhase) ? BRAZIL_PTS : 0;
       return { ...p, ...stats, total: stats.total + champBonus + viceBonus + thirdBonus + brazilBonus, champBonus, viceBonus, thirdBonus, brazilBonus };
     })
-    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    .sort((a, b) => b.total - a.total || b.c10 - a.c10 || b.c7 - a.c7 || b.c5 - a.c5 || a.name.localeCompare(b.name, 'pt-BR'));
 }
 
 function parseMatchDate(dateStr) {
