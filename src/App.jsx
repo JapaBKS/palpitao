@@ -156,10 +156,10 @@ function getBrazilPhase(matches) {
 
 const PIX_CODE = "00020126360014br.gov.bcb.pix0114+5541992774415520400005303986540550.005802BR5915Bruno Sakaguchi6009Sao Paulo62230519daqr25755251968148163044C9D";
 
-const CHAMPION_PTS = 40;
-const VICE_PTS = 20;
-const THIRD_PTS = 10;
-const BRAZIL_PTS = 20;
+const CHAMPION_PTS = 100;
+const VICE_PTS = 50;
+const THIRD_PTS = 30;
+const BRAZIL_PTS = 50;
 
 function getRanked(participants, matches, preds, championPts = CHAMPION_PTS) {
   const winner = getChampionWinner(matches);
