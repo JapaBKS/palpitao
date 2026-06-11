@@ -1499,10 +1499,15 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {editId === m.id ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                    {m.result && (
+                      <div style={{ fontSize: 11, fontWeight: 700, textAlign: "center", color: m.live ? C.red : C.green, background: m.live ? `${C.red}14` : `${C.green}14`, border: `1px solid ${m.live ? C.red : C.greenDim}44`, borderRadius: 6, padding: "4px 8px" }}>
+                        {m.live ? "🔴 Estado atual: PARCIAL (ao vivo, não conta como oficial)" : "✓ Estado atual: FINALIZADO (resultado oficial)"}
+                      </div>
+                    )}
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span><ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} autoFocus /><span style={{ color: C.muted }}>×</span><ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} /><span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => !saving && saveResult(m.id, true)} style={BTN({ flex: 1, fontSize: 13, background: C.red, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "🔴 Salvar Parcial"}</button>
-                      <button onClick={() => !saving && saveResult(m.id, false)} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "✓ Finalizar"}</button>
+                      <button onClick={() => !saving && saveResult(m.id, true)} style={BTN({ flex: 1, fontSize: 13, background: C.red, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : (m.result && !m.live ? "🔴 Voltar p/ Parcial" : "🔴 Salvar Parcial")}</button>
+                      <button onClick={() => { if (saving) return; if (window.confirm("Finalizar este resultado como OFICIAL?\n\nIsso passa a contar cravadas, bônus e resumo da rodada. Use só quando o jogo tiver acabado.")) saveResult(m.id, false); }} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "✓ Finalizar"}</button>
                     </div>
                     <button onClick={() => clearResult(m.id)} disabled={saving} style={GHOST_BTN({ fontSize: 12, color: C.red, borderColor: `${C.red}66`, opacity: saving ? 0.5 : 1 })}>Limpar Jogo</button>
                     <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>🔴 Parcial = tabela mexe ao vivo, mas não conta como oficial · ✓ Finalizar = resultado definitivo</div>
