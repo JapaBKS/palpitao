@@ -348,13 +348,77 @@ function buildRoundPicksText(matches, participants, preds, dayLabel) {
   return lines.join("\n").trim();
 }
 
+function showShareFallback(text, alreadyCopied) {
+  // Remove painel anterior, se houver
+  const old = document.getElementById("share-fallback-overlay");
+  if (old) old.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "share-fallback-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px;";
+
+  const box = document.createElement("div");
+  box.style.cssText = "background:#10171d;border:1px solid #1b2c38;border-radius:14px;max-width:440px;width:100%;padding:18px;display:flex;flex-direction:column;gap:12px;font-family:'Nunito',system-ui,sans-serif;";
+
+  const title = document.createElement("div");
+  title.style.cssText = "color:#cce8d4;font-weight:900;font-size:15px;";
+  title.textContent = alreadyCopied ? "✅ Copiado! É só colar no WhatsApp" : "📋 Copie o texto abaixo";
+
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.readOnly = true;
+  ta.style.cssText = "width:100%;height:200px;background:#0c1820;border:1px solid #1b2c38;border-radius:8px;color:#cce8d4;padding:10px;font-size:13px;font-family:monospace;resize:none;box-sizing:border-box;";
+
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex;gap:8px;";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "📋 Copiar";
+  copyBtn.style.cssText = "flex:1;background:#00a152;border:none;border-radius:8px;color:#fff;padding:12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px;";
+  copyBtn.onclick = () => {
+    ta.focus(); ta.select(); ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { /* ignore */ }
+    if (!ok && navigator.clipboard) { navigator.clipboard.writeText(text).catch(() => {}); }
+    copyBtn.textContent = "✅ Copiado!";
+    setTimeout(() => { copyBtn.textContent = "📋 Copiar"; }, 2000);
+  };
+
+  const waBtn = document.createElement("a");
+  waBtn.href = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  waBtn.target = "_blank";
+  waBtn.rel = "noopener";
+  waBtn.textContent = "📲 Abrir WhatsApp";
+  waBtn.style.cssText = "flex:1;background:#25D366;border:none;border-radius:8px;color:#062;padding:12px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;min-height:44px;display:flex;align-items:center;justify-content:center;text-decoration:none;";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "Fechar";
+  closeBtn.style.cssText = "background:none;border:1px solid #1b2c38;border-radius:8px;color:#4a6a5a;padding:8px;font-size:13px;cursor:pointer;font-family:inherit;min-height:40px;";
+  closeBtn.onclick = () => overlay.remove();
+
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+  btnRow.appendChild(copyBtn);
+  btnRow.appendChild(waBtn);
+  box.appendChild(title);
+  box.appendChild(ta);
+  box.appendChild(btnRow);
+  box.appendChild(closeBtn);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
 async function shareText(text) {
+  // 1) Compartilhamento nativo (ideal no celular → abre o seletor com WhatsApp)
   if (navigator.share) {
-    try { await navigator.share({ text }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+    try { await navigator.share({ text }); return; }
+    catch (e) { if (e && e.name === "AbortError") return; /* senão, cai no painel */ }
   }
-  try { await navigator.clipboard.writeText(text); alert("✅ Copiado! É só colar no WhatsApp."); return; } catch { /* fallback */ }
-  try { window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank"); }
-  catch (e) { console.warn("Falha ao compartilhar:", e); alert("Não foi possível compartilhar neste dispositivo."); }
+  // 2) Tenta copiar silenciosamente
+  let copied = false;
+  try { await navigator.clipboard.writeText(text); copied = true; } catch { /* sem clipboard */ }
+  // 3) Painel garantido: texto selecionável + copiar + link real do WhatsApp
+  showShareFallback(text, copied);
 }
 
 async function shareRanking(ranked, totalCaixa) {
@@ -399,6 +463,33 @@ function NextMatchCountdown({ matches }) {
 }
 
 /* ── Modais e Secoes ── */
+function DonutChart({ segments, size = 120, thickness = 22 }) {
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if (total === 0) return null;
+  const r = (size - thickness) / 2;
+  const cx = size / 2, cy = size / 2;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} style={{ width: size, height: size, flexShrink: 0 }}>
+      {segments.map((seg, i) => {
+        if (seg.value === 0) return null;
+        const frac = seg.value / total;
+        const dash = frac * circ;
+        const el = (
+          <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={seg.color} strokeWidth={thickness}
+            strokeDasharray={`${dash} ${circ - dash}`} strokeDashoffset={-offset}
+            transform={`rotate(-90 ${cx} ${cy})`} />
+        );
+        offset += dash;
+        return el;
+      })}
+      <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" fontWeight="900" fontFamily="'Bebas Neue', cursive" fill={C.text}>{total}</text>
+      <text x={cx} y={cy + 14} textAnchor="middle" fontSize="9" fill={C.muted}>palpites</text>
+    </svg>
+  );
+}
+
 function StatsModal({ participant, matches, preds, onClose }) {
   const stats = getDetailedStats(participant.id, matches, preds);
   const winner = getChampionWinner(matches);
@@ -475,13 +566,18 @@ function StatsModal({ participant, matches, preds, onClose }) {
         )}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 10, color: C.muted, marginBottom: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>Breakdown</div>
-          {bars.map(b => (
-            <div key={b.pts} style={{ display: "grid", gridTemplateColumns: "90px 1fr 24px", gap: 8, alignItems: "center", marginBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}><PtsBadge pts={b.pts} /><span style={{ fontSize: 11, color: b.color, fontWeight: 700 }}>{b.label}</span></div>
-              <div style={{ background: C.card, borderRadius: 4, height: 8, overflow: "hidden" }}><div style={{ width: `${(b.count / maxCount) * 100}%`, height: "100%", background: b.color, borderRadius: 4 }} /></div>
-              <div style={{ fontSize: 13, color: b.color, fontWeight: 900, textAlign: "right" }}>{b.count}</div>
+          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+            {stats.withPredCount > 0 && <DonutChart segments={bars.map(b => ({ value: b.count, color: b.color }))} />}
+            <div style={{ flex: 1, minWidth: 180 }}>
+              {bars.map(b => (
+                <div key={b.pts} style={{ display: "grid", gridTemplateColumns: "90px 1fr 24px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}><PtsBadge pts={b.pts} /><span style={{ fontSize: 11, color: b.color, fontWeight: 700 }}>{b.label}</span></div>
+                  <div style={{ background: C.card, borderRadius: 4, height: 8, overflow: "hidden" }}><div style={{ width: `${(b.count / maxCount) * 100}%`, height: "100%", background: b.color, borderRadius: 4 }} /></div>
+                  <div style={{ fontSize: 13, color: b.color, fontWeight: 900, textAlign: "right" }}>{b.count}</div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
         <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
           {stats.bestMatch && (
@@ -580,6 +676,44 @@ function SpecialPicksSection({ activePid, participants, isAdmin, onPickSpecial, 
   );
 }
 
+function PicksDistribution({ match, participants, preds }) {
+  // Conta quantas pessoas chutaram cada placar
+  const counts = {};
+  let totalPreds = 0;
+  participants.forEach(p => {
+    const pr = preds[p.id]?.[match.id];
+    if (pr && pr.a !== "" && pr.b !== "" && pr.a != null && pr.b != null) {
+      const key = `${pr.a}×${pr.b}`;
+      counts[key] = (counts[key] || 0) + 1;
+      totalPreds++;
+    }
+  });
+  if (totalPreds < 2) return null;
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const max = sorted[0][1];
+  const resultKey = match.result ? `${match.result.a}×${match.result.b}` : null;
+  return (
+    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+      <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, marginBottom: 8, letterSpacing: 0.5 }}>📊 PLACARES MAIS CHUTADOS</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {sorted.map(([score, n]) => {
+          const isResult = score === resultKey;
+          return (
+            <div key={score} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ minWidth: 42, fontSize: 12, fontWeight: 700, fontFamily: "'Bebas Neue', cursive", letterSpacing: 1, color: isResult ? C.green : C.text, textAlign: "right" }}>{score}</span>
+              <div style={{ flex: 1, background: C.surface, borderRadius: 4, height: 16, overflow: "hidden", position: "relative" }}>
+                <div style={{ width: `${(n / max) * 100}%`, height: "100%", background: isResult ? C.green : C.greenDim, borderRadius: 4, transition: "width .3s" }} />
+              </div>
+              <span style={{ minWidth: 18, fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left" }}>{n}</span>
+              {isResult && <span style={{ fontSize: 11 }}>✅</span>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PostGameMural({ match, participants, preds }) {
   const [open, setOpen] = useState(false);
   const sorted = [...participants].sort((a, b) => {
@@ -594,7 +728,9 @@ function PostGameMural({ match, participants, preds }) {
         {open ? "Ocultar lista de palpites" : match.result ? "Ver palpites de todos os participantes" : "👀 Ver palpites de todos (jogo em andamento)"}
       </button>
       {open && (
-        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
+        <div style={{ marginTop: 8 }}>
+          <PicksDistribution match={match} participants={participants} preds={preds} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {sorted.map(p => {
             const pred = preds[p.id]?.[match.id];
             const pts = match.result ? calcPts(pred, match.result) : null;
@@ -609,6 +745,7 @@ function PostGameMural({ match, participants, preds }) {
               </div>
             );
           })}
+          </div>
         </div>
       )}
     </div>
