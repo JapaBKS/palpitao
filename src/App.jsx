@@ -297,43 +297,35 @@ function setupPWA() {
   } catch (e) { console.warn("PWA setup falhou:", e); }
 }
 
-function shareRanking(ranked, totalCaixa) {
+function buildRankingText(ranked, totalCaixa) {
+  const medals = ["🥇", "🥈", "🥉"];
+  const lines = [];
+  lines.push("🏆 *BOLÃO DA COPA 2026* 🏆");
+  lines.push(`_Atualizado em ${new Date().toLocaleDateString("pt-BR")}_`);
+  lines.push("");
+  ranked.slice(0, 10).forEach((p, i) => {
+    const pos = i < 3 ? medals[i] : `${i + 1}º`;
+    lines.push(`${pos} *${p.name}* — ${p.total} pts`);
+  });
+  return lines.join("\n");
+}
+
+async function shareRanking(ranked, totalCaixa) {
+  const text = buildRankingText(ranked, totalCaixa);
+  // 1) Web Share API (abre o seletor nativo → WhatsApp direto no celular)
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; } catch (e) { if (e && e.name === "AbortError") return; }
+  }
+  // 2) Copiar pra área de transferência
   try {
-    const top = ranked.slice(0, 5);
-    const W = 720, rowH = 88, H = 180 + top.length * rowH + 70;
-    const c = document.createElement("canvas"); c.width = W; c.height = H;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "#06090a"; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = "#10171d"; ctx.fillRect(0, 0, W, 110);
-    ctx.fillStyle = "#ffca28"; ctx.font = "bold 40px system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("🏆 BOLÃO DA COPA 2026", W / 2, 50);
-    ctx.fillStyle = "#4a6a5a"; ctx.font = "20px system-ui, sans-serif";
-    ctx.fillText(`Caixa: R$ ${totalCaixa.toLocaleString("pt-BR")}  ·  ${new Date().toLocaleDateString("pt-BR")}`, W / 2, 86);
-    const medals = ["🥇", "🥈", "🥉"];
-    const rowColors = ["#ffca28", "#90a4ae", "#ff8f00"];
-    top.forEach((p, i) => {
-      const y = 130 + i * rowH;
-      ctx.fillStyle = i < 3 ? rowColors[i] + "14" : "#10171d";
-      ctx.fillRect(20, y, W - 40, rowH - 12);
-      ctx.fillStyle = i < 3 ? rowColors[i] : "#cce8d4";
-      ctx.font = "bold 34px system-ui, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillText(i < 3 ? medals[i] : `${i + 1}º`, 44, y + (rowH - 12) / 2);
-      ctx.fillStyle = "#cce8d4"; ctx.font = "bold 30px system-ui, sans-serif";
-      const nm = p.name.length > 22 ? p.name.slice(0, 21) + "…" : p.name;
-      ctx.fillText(nm, 110, y + (rowH - 12) / 2);
-      ctx.fillStyle = i < 3 ? rowColors[i] : "#cce8d4"; ctx.font = "bold 40px system-ui, sans-serif"; ctx.textAlign = "right";
-      ctx.fillText(String(p.total), W - 44, y + (rowH - 12) / 2);
-    });
-    ctx.fillStyle = "#4a6a5a"; ctx.font = "18px system-ui, sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("Faça seus palpites no app do Bolão ⚽", W / 2, H - 36);
-    c.toBlob(async (blob) => {
-      const file = new File([blob], "ranking-bolao.png", { type: "image/png" });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: "Bolão da Copa 2026" }); return; } catch { /* cancelado */ }
-      }
-      const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "ranking-bolao.png"; a.click(); URL.revokeObjectURL(url);
-    }, "image/png");
-  } catch (e) { console.warn("Falha ao gerar imagem:", e); alert("Não foi possível gerar a imagem do ranking neste dispositivo."); }
+    await navigator.clipboard.writeText(text);
+    alert("✅ Ranking copiado! É só colar no WhatsApp.");
+    return;
+  } catch { /* segue pro fallback */ }
+  // 3) Último recurso: abre o WhatsApp com o texto já preenchido
+  try {
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+  } catch (e) { console.warn("Falha ao compartilhar:", e); alert("Não foi possível compartilhar neste dispositivo."); }
 }
 
 /* ── Design tokens ── */
@@ -839,7 +831,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
       {ranked.length > 0 && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
           <button onClick={() => shareRanking(ranked, total)} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            📤 Compartilhar Ranking
+            📤 Compartilhar no WhatsApp
           </button>
         </div>
       )}
