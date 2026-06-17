@@ -1877,6 +1877,32 @@ export default function BolaoApp() {
     else { console.log(`✅ ${changed.length} jogo(s) salvo(s) no Supabase`); setToast({ message: "✅ Placar salvo no servidor!", type: "success" }); }
   };
 
+  // ⚽ Auto-início: quando um jogo trava (começa) sem resultado, lança 0×0 ao vivo automaticamente.
+  // Roda só no dispositivo do admin (evita vários celulares escrevendo ao mesmo tempo).
+  const smRef = useRef(sm);
+  useEffect(() => { smRef.current = sm; });
+  useEffect(() => {
+    if (!ready || !isAdmin) return;
+    const autoStart = () => {
+      const ms = stateRef.current.matches || [];
+      const now = Date.now();
+      const toStart = ms.filter(m => {
+        if (m.result) return false;
+        const d = parseMatchDate(m.date);
+        if (!d) return false;
+        const start = d.getTime();
+        return start <= now && (now - start) < 150 * 60 * 1000; // começou e ainda está dentro de ~2h30
+      });
+      if (toStart.length === 0) return;
+      const ids = new Set(toStart.map(m => m.id));
+      const updated = ms.map(m => ids.has(m.id) ? { ...m, result: { a: 0, b: 0 }, live: true } : m);
+      smRef.current(updated);
+    };
+    autoStart(); // verifica na hora
+    const id = setInterval(autoStart, 30000); // e a cada 30s
+    return () => clearInterval(id);
+  }, [ready, isAdmin]);
+
   const spr = async (d) => {
     const toSave = [];
     Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => { const p = d[participante_id][jogo_id]; if (p.a === "" || p.b === "" || p.a == null || p.b == null) return; const old = preds[participante_id]?.[jogo_id]; if (!old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b)) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b) }); }); });
