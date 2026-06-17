@@ -486,6 +486,22 @@ function PtsBadge({ pts }) { if (pts === null) return <span style={{ width: 34, 
 function ScoreIn({ value, onChange, disabled, onKeyDown, autoFocus }) { if (disabled) return <span style={{ width: 52, textAlign: "center", padding: "8px 4px", background: C.surface, borderRadius: 8, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700 }}>{value !== "" ? value : "-"}</span>; return <input type="number" inputMode="numeric" min="0" max="99" value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} autoFocus={autoFocus} style={INP({ width: 52, textAlign: "center", padding: "8px 4px", fontSize: 16 })} />; }
 function Divider({ label }) { return <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 17, letterSpacing: 1, color: C.muted, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 10 }}>{label}</div>; }
 
+// Avatar do participante: emoji, foto (URL) ou iniciais coloridas como fallback.
+const AVATAR_COLORS = ["#e57373", "#ba68c8", "#64b5f6", "#4db6ac", "#81c784", "#ffd54f", "#ff8a65", "#a1887f", "#90a4ae", "#f06292"];
+function avatarColor(seed) { let h = 0; for (let i = 0; i < (seed || "").length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length]; }
+function Avatar({ participant, size = 28 }) {
+  const a = (participant?.avatar || "").trim();
+  const border = `1px solid ${C.border}`;
+  if (a && /^https?:\/\//i.test(a)) {
+    return <img src={a} alt="" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border }} onError={(e) => { e.target.style.display = "none"; }} />;
+  }
+  if (a) { // emoji ou texto curto
+    return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.6, background: C.card, border }}>{a}</span>;
+  }
+  const initials = (participant?.name || "?").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+  return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4, fontWeight: 900, color: "#0008", background: avatarColor(participant?.name) }}>{initials}</span>;
+}
+
 function Toast({ message, type = "success", onDone }) {
   useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
   return <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: type === "error" ? "#c62828" : C.greenDim, color: "#fff", borderRadius: 20, padding: "12px 24px", fontWeight: 700, fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px #000c", whiteSpace: "nowrap", pointerEvents: "none" }}>{message}</div>;
@@ -1123,6 +1139,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
             <div key={p.id} className="row-hover" onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: !p.paid ? "transparent" : isPodium ? `${[C.gold, C.silver, C.bronze][paidPos - 1]}0a` : "transparent", cursor: "pointer", opacity: p.paid ? 1 : 0.4, filter: p.paid ? "none" : "grayscale(0.8)" }}>
               <span style={{ display: "flex", alignItems: "center", fontSize: isPodium ? (isMobile ? 17 : 20) : 13, color: !p.paid ? C.muted : !isPodium ? C.muted : undefined }}>{isPodium ? medals[paidPos - 1] : p.paid ? `${paidPos}º` : "—"}</span>
               <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
+                <Avatar participant={p} size={isMobile ? 22 : 26} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14, minWidth: 0, flexShrink: 1, textDecoration: p.paid ? "none" : "line-through", textDecorationColor: C.muted }}>{p.name}</span>
                 {(() => { const prev = prevPositions[p.id]; const delta = prev ? prev - (i + 1) : 0; return p.paid && delta !== 0 ? <span style={{ fontSize: 10, fontWeight: 900, color: delta > 0 ? C.green : C.red, flexShrink: 0 }}>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</span> : null; })()}
                 {!p.paid && <span style={{ fontSize: 9, background: `${C.muted}22`, color: C.muted, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>não pago</span>}
@@ -1246,7 +1263,7 @@ function TabChaveamento({ matches }) {
 }
 
 function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAccess, onAdminLogout }) {
-  const [name, setName] = useState(""); const [pin, setPin] = useState(""); const [editingId, setEditingId] = useState(null); const [editName, setEditName] = useState(""); const [editPin, setEditPin] = useState(""); const [authingId, setAuthingId] = useState(null); const [authPin, setAuthPin] = useState(""); const [authError, setAuthError] = useState("");
+  const [name, setName] = useState(""); const [pin, setPin] = useState(""); const [editingId, setEditingId] = useState(null); const [editName, setEditName] = useState(""); const [editPin, setEditPin] = useState(""); const [editAvatar, setEditAvatar] = useState(""); const [authingId, setAuthingId] = useState(null); const [authPin, setAuthPin] = useState(""); const [authError, setAuthError] = useState("");
 
   const add = () => {
     if (!name.trim()) return alert("Por favor, digite seu nome!");
@@ -1258,7 +1275,7 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAc
 
   const startEdit = (p) => {
     if (isAdmin) {
-      setEditingId(p.id); setEditName(p.name); setEditPin("");
+      setEditingId(p.id); setEditName(p.name); setEditPin(""); setEditAvatar(p.avatar || "");
     } else {
       setAuthingId(p.id); setAuthPin(""); setAuthError("");
     }
@@ -1268,14 +1285,14 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAc
     const p = participants.find(x => x.id === authingId);
     if (authPin !== p.pin) { setAuthError("Senha incorreta. Tente novamente."); return; }
     setAuthingId(null);
-    setEditingId(p.id); setEditName(p.name); setEditPin("");
+    setEditingId(p.id); setEditName(p.name); setEditPin(""); setEditAvatar(p.avatar || "");
   };
 
   const saveEdit = (id) => {
     if (!editName.trim()) return alert("O nome não pode ficar vazio!");
     if (editPin && editPin.length < 4) return alert("A nova senha deve ter no mínimo 4 caracteres!");
     const current = participants.find(p => p.id === id);
-    onChange(participants.map(p => p.id === id ? { ...p, name: editName.trim(), pin: editPin || current.pin } : p));
+    onChange(participants.map(p => p.id === id ? { ...p, name: editName.trim(), pin: editPin || current.pin, avatar: editAvatar.trim() } : p));
     setEditingId(null);
   };
 
@@ -1315,6 +1332,16 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAc
                 <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOME</label>
                 <input value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEdit(editingId)} style={INP()} autoFocus />
               </div>
+              {isAdmin && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>FOTO / EMOJI <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— um emoji (ex: 🦊) ou link de imagem (https://…)</span></label>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Avatar participant={{ name: editName, avatar: editAvatar }} size={42} />
+                    <input value={editAvatar} onChange={e => setEditAvatar(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEdit(editingId)} placeholder="🦊 ou https://..." style={INP({ flex: 1 })} />
+                    {editAvatar && <button onClick={() => setEditAvatar("")} style={GHOST_BTN({ padding: "6px 10px", minHeight: 36, color: C.red, borderColor: `${C.red}55` })}>Limpar</button>}
+                  </div>
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>NOVA SENHA <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— deixe em branco para manter</span></label>
                 <input type="password" value={editPin} onChange={e => setEditPin(e.target.value)} placeholder="••••" onKeyDown={e => e.key === "Enter" && saveEdit(editingId)} style={INP({ textAlign: "center", letterSpacing: 4 })} />
@@ -1338,6 +1365,7 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAc
       {participants.map((p) => (
         <div key={p.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <Avatar participant={p} size={32} />
             <span style={{ flex: 1, fontWeight: 700, minWidth: 80, color: C.text }}>{p.name}</span>
             <span style={{ fontSize: 12, color: p.paid ? C.green : C.red, fontWeight: 700 }}>{p.paid ? "✅ Inscrição Paga" : "❌ Pix Pendente"}</span>
             <button onClick={() => startEdit(p)} style={GHOST_BTN({ padding: "6px 12px", minHeight: 36 })}>✏️ Editar</button>
@@ -1616,7 +1644,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{sortedParticipants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{sortedParticipants.map((p) => (<button key={p.id} className="pill-hover" onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 24, padding: "8px 18px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minHeight: 40 }}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
+        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{sortedParticipants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{sortedParticipants.map((p) => (<button key={p.id} className="pill-hover" onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 24, padding: "6px 16px 6px 8px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minHeight: 40, display: "inline-flex", alignItems: "center", gap: 8 }}><Avatar participant={p} size={26} />{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
       </div>
       {!isUnlocked ? (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "30px 20px", textAlign: "center", marginTop: 40 }}>
@@ -1625,7 +1653,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
         </div>
       ) : (
         <>
-          {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>{myRank > 0 && hasResults && <span style={{ background: myRank <= 3 ? `${C.gold}1a` : C.surface, color: myRank <= 3 ? C.gold : C.muted, border: `1px solid ${myRank <= 3 ? C.gold + "44" : C.border}`, borderRadius: 10, padding: "3px 10px", fontSize: 13, fontWeight: 900 }}>{myRank === 1 ? "🥇" : myRank === 2 ? "🥈" : myRank === 3 ? "🥉" : "#"}{myRank <= 3 ? "" : myRank}º lugar</span>}<span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{(!activeUser?.paid || pendingCount > 0) && <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{!activeUser?.paid && <span style={{ background: `${C.red}1a`, color: C.red, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ Pix pendente</span>}{pendingCount > 0 && <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}</div>}
+          {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><Avatar participant={activeUser} size={40} />{myRank > 0 && hasResults && <span style={{ background: myRank <= 3 ? `${C.gold}1a` : C.surface, color: myRank <= 3 ? C.gold : C.muted, border: `1px solid ${myRank <= 3 ? C.gold + "44" : C.border}`, borderRadius: 10, padding: "3px 10px", fontSize: 13, fontWeight: 900 }}>{myRank === 1 ? "🥇" : myRank === 2 ? "🥈" : myRank === 3 ? "🥉" : "#"}{myRank <= 3 ? "" : myRank}º lugar</span>}<span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{(!activeUser?.paid || pendingCount > 0) && <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{!activeUser?.paid && <span style={{ background: `${C.red}1a`, color: C.red, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ Pix pendente</span>}{pendingCount > 0 && <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}</div>}
           <NextMatchHighlight matches={matches} activePid={activePid} preds={preds} />
           {!activeUser?.paid && <PixSection />}
           <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />
@@ -1876,7 +1904,16 @@ export default function BolaoApp() {
     return () => supabase.removeChannel(channel);
   }, [ready]);
 
-  const sp = async (d) => { setParticipants(d); await supabase.from('participantes').upsert(d); };
+  const sp = async (d) => {
+    setParticipants(d);
+    let { error } = await supabase.from('participantes').upsert(d);
+    if (error && /avatar/.test(error.message || "")) {
+      const stripped = d.map(({ avatar, ...rest }) => rest);
+      ({ error } = await supabase.from('participantes').upsert(stripped));
+      if (!error) showToast("⚠️ Salvo, mas rode a migração 'avatar' p/ as fotos sincronizarem", "error");
+    }
+    if (error) { console.error("❌ Erro ao salvar participante:", error); showToast("❌ Erro ao salvar no servidor!", "error"); }
+  };
   const removeP = async (id) => { setParticipants(p => p.filter(x => x.id !== id)); await supabase.from('participantes').delete().eq('id', id); };
   const sm = async (d) => {
     const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result) || (old.live === true) !== (j.live === true); });
