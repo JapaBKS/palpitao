@@ -1715,31 +1715,33 @@ function PendingPicksPanel({ participants, matches, preds, isAdmin }) {
 function TabVisao({ participants, matches, preds, isAdmin }) {
   if (participants.length === 0) return <Empty icon="👥" msg="Aguardando participantes." />;
   const ranked = getRanked(participants, matches, preds);
-  const played = matches.filter((m) => m.result);
+  const played = matches
+    .filter((m) => m.result)
+    .sort((a, b) => { const da = parseMatchDate(a.date), db = parseMatchDate(b.date); return (da ? da.getTime() : Infinity) - (db ? db.getTime() : Infinity); });
 
   return (
     <div>
       <PendingPicksPanel participants={participants} matches={matches} preds={preds} isAdmin={isAdmin} />
       {played.length === 0 ? <Empty icon="⏳" msg="Nenhum jogo finalizado para auditoria de pontos." /> : (
-      <div style={{ overflowX: "auto", scrollbarWidth: "thin" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 600 }}>
+      <div style={{ overflow: "auto", scrollbarWidth: "thin", maxHeight: "calc(100vh - 220px)", border: `1px solid ${C.border}`, borderRadius: 8 }}>
+        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 12, minWidth: 600 }}>
           <thead>
-            <tr style={{ background: C.surface }}>
-              <th style={{ padding: "10px 12px", textAlign: "left", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}` }}>Partida</th><th style={{ padding: "10px 8px", textAlign: "center", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, width: 80 }}>Oficial</th>
-              {ranked.map((p) => <th key={p.id} style={{ padding: "10px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name.split(" ")[0]}</th>)}
+            <tr>
+              <th style={{ position: "sticky", top: 0, left: 0, zIndex: 3, padding: "10px 12px", textAlign: "left", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, background: C.surface }}>Partida</th><th style={{ position: "sticky", top: 0, zIndex: 2, padding: "10px 8px", textAlign: "center", color: C.muted, fontWeight: 700, borderBottom: `1px solid ${C.border}`, width: 80, background: C.surface }}>Oficial</th>
+              {ranked.map((p) => <th key={p.id} style={{ position: "sticky", top: 0, zIndex: 2, padding: "10px 6px", textAlign: "center", color: C.text, fontWeight: 700, borderBottom: `1px solid ${C.border}`, maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", background: C.surface }}>{p.name.split(" ")[0]}</th>)}
             </tr>
           </thead>
           <tbody>
             {played.map((m) => (
-              <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}44` }}>
-                <td style={{ padding: "10px 12px", color: C.text, fontWeight: 600 }}>{m.teamA} × {m.teamB}</td>
-                <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002" }}>{m.result.a}×{m.result.b}</td>
+              <tr key={m.id}>
+                <td style={{ position: "sticky", left: 0, zIndex: 1, padding: "10px 12px", color: C.text, fontWeight: 600, background: C.bg, borderBottom: `1px solid ${C.border}44` }}>{m.teamA} × {m.teamB}</td>
+                <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002", borderBottom: `1px solid ${C.border}44` }}>{m.result.a}×{m.result.b}</td>
                 {ranked.map((p) => {
                   const pred = preds[p.id]?.[m.id];
                   const pts = calcPts(pred, m.result);
                   const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
                   return (
-                    <td key={p.id} style={{ padding: "6px", textAlign: "center" }}>
+                    <td key={p.id} style={{ padding: "6px", textAlign: "center", borderBottom: `1px solid ${C.border}44` }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 11, color: hasPred ? C.text : C.border }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span><PtsBadge pts={pts} /></div>
                     </td>
                   );
