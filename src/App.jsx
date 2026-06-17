@@ -370,13 +370,15 @@ function buildRankingText(ranked, totalCaixa) {
 
 // Monta o texto dos palpites de TODOS os jogadores nos jogos visíveis (já travados/iniciados).
 function buildRoundPicksText(matches, participants, preds, dayLabel) {
+  const single = matches.length === 1;
   const lines = [];
-  lines.push("⚽ *PALPITES DA RODADA* ⚽");
+  lines.push(single ? "⚽ *PALPITES DO JOGO* ⚽" : "⚽ *PALPITES DA RODADA* ⚽");
   if (dayLabel) lines.push(`_${dayLabel}_`);
   lines.push("");
   matches.forEach((m) => {
-    const placar = m.result ? `  (Final: ${m.result.a}×${m.result.b})` : "";
-    lines.push(`*${m.teamA} × ${m.teamB}*${placar}`);
+    const placar = m.result ? `  (${m.live ? "Parcial" : "Final"}: ${m.result.a}×${m.result.b})` : "";
+    if (!single) lines.push(`*${m.teamA} × ${m.teamB}*${placar}`);
+    else if (placar) lines.push(`_${placar.trim()}_`);
     participants.forEach((p) => {
       const pr = preds[p.id]?.[m.id];
       const has = pr && pr.a !== "" && pr.b !== "" && pr.a != null && pr.b != null;
@@ -1049,6 +1051,9 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
   const unpaidCount = participants.length - paidCount;
   const total = paidCount * 50;
   const played = matches.filter(m => m.result).length;
+  // Jogo atual pra exportar palpites: o mais recente que já começou (travado).
+  const lockedMatches = matches.filter(m => isLocked(m.date) && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(b.date) - parseMatchDate(a.date));
+  const currentMatch = lockedMatches.find(m => !m.result) || lockedMatches[0] || null;
   const medals = ["🥇", "🥈", "🥉"];
   const prizes = [ { color: C.gold, pct: "60%", val: Math.round(total * 0.6) }, { color: C.silver, pct: "30%", val: Math.round(total * 0.3) }, { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) } ];
   const winner = getChampionWinner(matches);
@@ -1077,7 +1082,12 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
       <EvolutionChart participants={participants} matches={matches} preds={preds} />
       <ScoringLegend />
       {ranked.length > 0 && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          {currentMatch && (
+            <button onClick={() => shareText(buildRoundPicksText([currentMatch], participants, preds, `${currentMatch.teamA} × ${currentMatch.teamB}`))} className="pill-hover" style={{ background: `${C.gold}1a`, border: `1px solid ${C.gold}55`, color: C.gold, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              📋 Palpites do jogo atual
+            </button>
+          )}
           <button onClick={() => shareRanking(ranked, total)} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
             📤 Compartilhar no WhatsApp
           </button>
@@ -1584,18 +1594,6 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
           {!activeUser?.paid && <PixSection />}
           <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />
           <FilterBar active={filter} onChange={setFilter} matches={matches} />
-          {(() => {
-            const exportable = filteredMatches.filter(m => isLocked(m.date) || m.result);
-            if (exportable.length === 0) return null;
-            const dayLabel = filter === "hoje" ? "Jogos de hoje" : filter === "todos" ? "Todas as fases" : null;
-            return (
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-                <button onClick={() => shareText(buildRoundPicksText(exportable, participants, preds, dayLabel))} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  📋 Exportar palpites desta rodada
-                </button>
-              </div>
-            );
-          })()}
           {grouped.length === 0 && <Empty icon="📅" msg="Nenhuma partida agendada neste filtro." />}
           {isFallback && <div style={{ fontSize: 12, color: C.muted, marginBottom: 12, padding: "8px 12px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8 }}>📅 Sem jogos hoje — mostrando os próximos a acontecer</div>}
           {grouped.map(({ ph, ms }) => (
