@@ -1488,6 +1488,38 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
   const filtered = applyFilter(matches, filter);
   const grouped = PHASES.map((ph) => ({ ph, ms: filtered.filter((m) => m.phase === ph).sort((a, b) => { const da = parseMatchDate(a.date), db = parseMatchDate(b.date); if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db; }) })).filter((g) => g.ms.length);
 
+  // Jogos de hoje + em andamento (ao vivo) → acesso rápido pro admin lançar placar sem rolar
+  const todayMatches = matches
+    .filter(m => (m.date && m.date.startsWith(todayDDMM())) || (m.live && m.result) || (isLocked(m.date) && !m.result && parseMatchDate(m.date)))
+    .filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
+    .sort((a, b) => { const da = parseMatchDate(a.date), db = parseMatchDate(b.date); if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db; });
+
+  const renderMatchCard = (m) => (
+    <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "11px 14px", display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+      {m.date && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{isLocked(m.date) ? " (Encerrado)" : ""}</span>{m.live && m.result && <span style={{ fontSize: 10, fontWeight: 900, color: C.red, background: `${C.red}1a`, border: `1px solid ${C.red}55`, borderRadius: 10, padding: "1px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}</div>}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {editId === m.id ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+            {m.result && (
+              <div style={{ fontSize: 11, fontWeight: 700, textAlign: "center", color: m.live ? C.red : C.green, background: m.live ? `${C.red}14` : `${C.green}14`, border: `1px solid ${m.live ? C.red : C.greenDim}44`, borderRadius: 6, padding: "4px 8px" }}>
+                {m.live ? "🔴 Estado atual: PARCIAL (ao vivo, não conta como oficial)" : "✓ Estado atual: FINALIZADO (resultado oficial)"}
+              </div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span><ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} autoFocus /><span style={{ color: C.muted }}>×</span><ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} /><span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => !saving && saveResult(m.id, true)} style={BTN({ flex: 1, fontSize: 13, background: C.red, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : (m.result && !m.live ? "🔴 Voltar p/ Parcial" : "🔴 Salvar Parcial")}</button>
+              <button onClick={() => { if (saving) return; if (window.confirm("Finalizar este resultado como OFICIAL?\n\nIsso passa a contar cravadas, bônus e resumo da rodada. Use só quando o jogo tiver acabado.")) saveResult(m.id, false); }} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "✓ Finalizar"}</button>
+            </div>
+            <button onClick={() => clearResult(m.id)} disabled={saving} style={GHOST_BTN({ fontSize: 12, color: C.red, borderColor: `${C.red}66`, opacity: saving ? 0.5 : 1 })}>Limpar Jogo</button>
+            <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>🔴 Parcial = tabela mexe ao vivo, mas não conta como oficial · ✓ Finalizar = resultado definitivo</div>
+          </div>
+        ) : (
+          <><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>{m.result ? <button onClick={() => isAdmin && startEdit(m)} style={{ background: m.live ? `${C.red}12` : `${C.green}12`, border: `1px solid ${m.live ? C.red : C.greenDim}`, borderRadius: 8, color: m.live ? C.red : C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20 }}>{m.result.a} × {m.result.b}</button> : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>}<span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div>
       {isAdmin && (
@@ -1508,36 +1540,23 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
         </div>
       )}
       {!isAdmin && <div style={{ marginBottom: 16, color: C.gold, fontSize: 13 }}>⚠️ Painel restrito. Apenas o administrador atualiza os resultados de campo.</div>}
+
+      {isAdmin && todayMatches.length > 0 && (
+        <div style={{ background: `linear-gradient(135deg, ${C.gold}10, ${C.card})`, border: `1px solid ${C.gold}55`, borderRadius: 12, padding: "14px 16px", marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 18 }}>📅</span>
+            <span style={{ fontWeight: 900, color: C.gold, fontSize: 14 }}>Jogos de Hoje / Ao Vivo ({todayMatches.length})</span>
+          </div>
+          {todayMatches.map(renderMatchCard)}
+        </div>
+      )}
+
       <FilterBar active={filter} onChange={setFilter} matches={matches} />
       {grouped.length === 0 && <Empty icon="📅" msg="Nenhum jogo localizado." />}
       {grouped.map(({ ph, ms }) => (
         <div key={ph} style={{ marginBottom: 24 }}>
           <Divider label={`${ph} (${ms.length})`} />
-          {ms.map((m) => (
-            <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "11px 14px", display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-              {m.date && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{isLocked(m.date) ? " (Encerrado)" : ""}</span>{m.live && m.result && <span style={{ fontSize: 10, fontWeight: 900, color: C.red, background: `${C.red}1a`, border: `1px solid ${C.red}55`, borderRadius: 10, padding: "1px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}</div>}
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {editId === m.id ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                    {m.result && (
-                      <div style={{ fontSize: 11, fontWeight: 700, textAlign: "center", color: m.live ? C.red : C.green, background: m.live ? `${C.red}14` : `${C.green}14`, border: `1px solid ${m.live ? C.red : C.greenDim}44`, borderRadius: 6, padding: "4px 8px" }}>
-                        {m.live ? "🔴 Estado atual: PARCIAL (ao vivo, não conta como oficial)" : "✓ Estado atual: FINALIZADO (resultado oficial)"}
-                      </div>
-                    )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span><ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} autoFocus /><span style={{ color: C.muted }}>×</span><ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} /><span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => !saving && saveResult(m.id, true)} style={BTN({ flex: 1, fontSize: 13, background: C.red, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : (m.result && !m.live ? "🔴 Voltar p/ Parcial" : "🔴 Salvar Parcial")}</button>
-                      <button onClick={() => { if (saving) return; if (window.confirm("Finalizar este resultado como OFICIAL?\n\nIsso passa a contar cravadas, bônus e resumo da rodada. Use só quando o jogo tiver acabado.")) saveResult(m.id, false); }} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "✓ Finalizar"}</button>
-                    </div>
-                    <button onClick={() => clearResult(m.id)} disabled={saving} style={GHOST_BTN({ fontSize: 12, color: C.red, borderColor: `${C.red}66`, opacity: saving ? 0.5 : 1 })}>Limpar Jogo</button>
-                    <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>🔴 Parcial = tabela mexe ao vivo, mas não conta como oficial · ✓ Finalizar = resultado definitivo</div>
-                  </div>
-                ) : (
-                  <><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>{m.result ? <button onClick={() => isAdmin && startEdit(m)} style={{ background: m.live ? `${C.red}12` : `${C.green}12`, border: `1px solid ${m.live ? C.red : C.greenDim}`, borderRadius: 8, color: m.live ? C.red : C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20 }}>{m.result.a} × {m.result.b}</button> : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>}<span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></>
-                )}
-              </div>
-            </div>
-          ))}
+          {ms.map(renderMatchCard)}
         </div>
       ))}
     </div>
