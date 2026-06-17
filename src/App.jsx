@@ -625,8 +625,11 @@ function StatsModal({ participant, matches, preds, onClose }) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000b", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, width: "100%", maxWidth: 420, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div><div style={{ fontWeight: 900, fontSize: 18 }}>{participant.name}</div><div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{stats.withPredCount} palpites · {stats.accuracy}% acerto · 🔥 série de {stats.streak}</div></div>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22 }}>×</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, overflow: "hidden" }}>
+            <Avatar participant={participant} size={52} />
+            <div style={{ overflow: "hidden" }}><div style={{ fontWeight: 900, fontSize: 18, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{participant.name}</div><div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{stats.withPredCount} palpites · {stats.accuracy}% acerto · 🔥 série de {stats.streak}</div></div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22, flexShrink: 0 }}>×</button>
         </div>
         <div style={{ padding: "14px 20px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 48, color: C.gold, lineHeight: 1 }}>{totalWithChamp}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span>
@@ -960,9 +963,9 @@ function RoundSummary({ participants, matches, preds }) {
         <span style={{ fontSize: 11, color: C.muted }}>{summary.dayLabel} · {summary.matchCount} jogo{summary.matchCount > 1 ? "s" : ""}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: summary.top.length > 1 ? 10 : 0 }}>
-        <span style={{ fontSize: 30 }}>⭐</span>
+        <Avatar participant={participants.find(x => x.id === champ.id)} size={44} />
         <div style={{ flex: 1, overflow: "hidden" }}>
-          <div style={{ fontSize: 11, color: C.muted }}>Craque da Rodada</div>
+          <div style={{ fontSize: 11, color: C.muted }}>⭐ Craque da Rodada</div>
           <div style={{ fontWeight: 900, color: C.text, fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{champ.name}</div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -971,9 +974,9 @@ function RoundSummary({ participants, matches, preds }) {
         </div>
       </div>
       {summary.top.length > 1 && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", borderTop: `1px solid ${C.gold}22`, paddingTop: 8 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", borderTop: `1px solid ${C.gold}22`, paddingTop: 8 }}>
           {summary.top.slice(1).map((s, i) => (
-            <span key={s.id} style={{ fontSize: 12, color: C.muted }}>{medals[i + 1]} {s.name} <span style={{ color: C.text, fontWeight: 700 }}>+{s.pts}</span></span>
+            <span key={s.id} style={{ fontSize: 12, color: C.muted, display: "inline-flex", alignItems: "center", gap: 5 }}>{medals[i + 1]} <Avatar participant={participants.find(x => x.id === s.id)} size={20} /> {s.name} <span style={{ color: C.text, fontWeight: 700 }}>+{s.pts}</span></span>
           ))}
         </div>
       )}
@@ -1169,7 +1172,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
             <div key={p.id} className="row-hover" onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: !p.paid ? "transparent" : isPodium ? `${[C.gold, C.silver, C.bronze][paidPos - 1]}0a` : "transparent", cursor: "pointer", opacity: p.paid ? 1 : 0.4, filter: p.paid ? "none" : "grayscale(0.8)" }}>
               <span style={{ display: "flex", alignItems: "center", fontSize: isPodium ? (isMobile ? 17 : 20) : 13, color: !p.paid ? C.muted : !isPodium ? C.muted : undefined }}>{isPodium ? medals[paidPos - 1] : p.paid ? `${paidPos}º` : "—"}</span>
               <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
-                <Avatar participant={p} size={isMobile ? 22 : 26} />
+                <Avatar participant={p} size={isMobile ? 30 : 34} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14, minWidth: 0, flexShrink: 1, textDecoration: p.paid ? "none" : "line-through", textDecorationColor: C.muted }}>{p.name}</span>
                 {(() => { const prev = prevPositions[p.id]; const delta = prev ? prev - (i + 1) : 0; return p.paid && delta !== 0 ? <span style={{ fontSize: 10, fontWeight: 900, color: delta > 0 ? C.green : C.red, flexShrink: 0 }}>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</span> : null; })()}
                 {!p.paid && <span style={{ fontSize: 9, background: `${C.muted}22`, color: C.muted, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>não pago</span>}
@@ -1694,7 +1697,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{sortedParticipants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{sortedParticipants.map((p) => (<button key={p.id} className="pill-hover" onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 24, padding: "6px 16px 6px 8px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minHeight: 40, display: "inline-flex", alignItems: "center", gap: 8 }}><Avatar participant={p} size={26} />{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
+        {isMobile ? <select value={activePid} onChange={e => { setSelPid(e.target.value); setPinInput(""); }} style={INP({ fontSize: 15, fontWeight: 700 })}>{sortedParticipants.map((p) => (<option key={p.id} value={p.id}>{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</option>))}</select> : <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{sortedParticipants.map((p) => (<button key={p.id} className="pill-hover" onClick={() => { setSelPid(p.id); setPinInput(""); }} style={{ border: `1px solid ${activePid === p.id ? C.green : C.border}`, background: activePid === p.id ? `${C.green}1a` : C.card, color: activePid === p.id ? C.green : C.muted, borderRadius: 24, padding: "6px 16px 6px 8px", cursor: "pointer", fontWeight: 700, fontSize: 14, fontFamily: "inherit", minHeight: 40, display: "inline-flex", alignItems: "center", gap: 8 }}><Avatar participant={p} size={30} />{p.name} {sessionUnlocked[p.id] ? "🔓" : "🔒"}</button>))}</div>}
       </div>
       {!isUnlocked ? (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "30px 20px", textAlign: "center", marginTop: 40 }}>
@@ -1703,7 +1706,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
         </div>
       ) : (
         <>
-          {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><Avatar participant={activeUser} size={40} />{myRank > 0 && hasResults && <span style={{ background: myRank <= 3 ? `${C.gold}1a` : C.surface, color: myRank <= 3 ? C.gold : C.muted, border: `1px solid ${myRank <= 3 ? C.gold + "44" : C.border}`, borderRadius: 10, padding: "3px 10px", fontSize: 13, fontWeight: 900 }}>{myRank === 1 ? "🥇" : myRank === 2 ? "🥈" : myRank === 3 ? "🥉" : "#"}{myRank <= 3 ? "" : myRank}º lugar</span>}<span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{(!activeUser?.paid || pendingCount > 0) && <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{!activeUser?.paid && <span style={{ background: `${C.red}1a`, color: C.red, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ Pix pendente</span>}{pendingCount > 0 && <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}</div>}
+          {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><Avatar participant={activeUser} size={48} />{myRank > 0 && hasResults && <span style={{ background: myRank <= 3 ? `${C.gold}1a` : C.surface, color: myRank <= 3 ? C.gold : C.muted, border: `1px solid ${myRank <= 3 ? C.gold + "44" : C.border}`, borderRadius: 10, padding: "3px 10px", fontSize: 13, fontWeight: 900 }}>{myRank === 1 ? "🥇" : myRank === 2 ? "🥈" : myRank === 3 ? "🥉" : "#"}{myRank <= 3 ? "" : myRank}º lugar</span>}<span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{(!activeUser?.paid || pendingCount > 0) && <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{!activeUser?.paid && <span style={{ background: `${C.red}1a`, color: C.red, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ Pix pendente</span>}{pendingCount > 0 && <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}</div>}
           <NextMatchHighlight matches={matches} activePid={activePid} preds={preds} />
           {!activeUser?.paid && <PixSection />}
           <SpecialPicksSection activePid={activePid} participants={participants} matches={matches} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />
