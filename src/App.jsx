@@ -286,7 +286,7 @@ function getRoundSummary(participants, matches, preds) {
   return { dayLabel: latestKey, matchCount: dayMatches.length, top: scores.slice(0, 3) };
 }
 
-function getEvolution(participants, matches, preds, topN = 6) {
+function getEvolution(participants, matches, preds) {
   const days = {};
   matches.filter(m => m.result).forEach(m => {
     const k = getDayKey(m.date) || "—";
@@ -294,15 +294,17 @@ function getEvolution(participants, matches, preds, topN = 6) {
     days[k].ms.push(m);
   });
   const ordered = Object.values(days).sort((a, b) => a.time - b.time);
-  if (ordered.length < 2) return null;
-  const finalRanked = getRanked(participants, matches, preds).slice(0, topN);
-  const series = finalRanked.map(p => ({ id: p.id, name: p.name, points: [0] }));
+  if (ordered.length < 1) return null;
   const cum = {}; participants.forEach(p => { cum[p.id] = 0; });
+  const series = participants.map(p => ({ id: p.id, name: p.name, points: [], positions: [] }));
   ordered.forEach(day => {
     day.ms.forEach(m => { participants.forEach(p => { const v = calcPts(preds[p.id]?.[m.id], m.result); if (v != null) cum[p.id] += v; }); });
-    series.forEach(s => s.points.push(cum[s.id]));
+    // Posição (rank) de cada um após essa rodada
+    const sorted = [...participants].sort((a, b) => (cum[b.id] - cum[a.id]) || a.name.localeCompare(b.name, "pt-BR"));
+    const posMap = {}; sorted.forEach((p, i) => { posMap[p.id] = i + 1; });
+    series.forEach(s => { s.points.push(cum[s.id]); s.positions.push(posMap[s.id]); });
   });
-  return { labels: ["Início", ...ordered.map(d => d.key)], series };
+  return { labels: ordered.map(d => d.key), series, count: participants.length };
 }
 
 function getGroupStageMeeting(teamA, teamB, matches) {
@@ -935,44 +937,59 @@ function RoundSummary({ participants, matches, preds }) {
 
 function EvolutionChart({ participants, matches, preds }) {
   const [open, setOpen] = useState(false);
-  const data = getEvolution(participants, matches, preds, 6);
-  if (!data) return null;
-  const W = 680, H = 260, padL = 34, padR = 12, padT = 16, padB = 28;
-  const maxPts = Math.max(1, ...data.series.flatMap(s => s.points));
+  const [highlight, setHighlight] = useState("");
+  const data = getEvolution(participants, matches, preds);
+  if (!data || data.labels.length < 2) return null;
+  const N = data.count;
+  const W = 680, H = Math.max(260, 120 + N * 8), padL = 30, padR = 70, padT = 16, padB = 28;
   const n = data.labels.length;
-  const x = i => padL + (i / (n - 1)) * (W - padL - padR);
-  const y = v => padT + (1 - v / maxPts) * (H - padT - padB);
-  const lineColors = [C.gold, C.green, C.blue, C.bronze, "#e040fb", "#ff5252"];
+  const x = i => padL + (n === 1 ? 0 : (i / (n - 1)) * (W - padL - padR));
+  const y = pos => padT + (N === 1 ? 0 : ((pos - 1) / (N - 1)) * (H - padT - padB)); // 1º no topo
+  const sortedNames = [...participants].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const hl = data.series.find(s => s.id === highlight);
+  // níveis de posição pro eixo (1, ..., N) — mostra alguns se forem muitos
+  const levels = N <= 10 ? Array.from({ length: N }, (_, i) => i + 1) : [1, Math.ceil(N / 4), Math.ceil(N / 2), Math.ceil(3 * N / 4), N];
+
   return (
     <div style={{ marginBottom: 16 }}>
       <button onClick={() => setOpen(o => !o)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, padding: "7px 14px", fontSize: 12, cursor: "pointer", fontFamily: "inherit", width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span>📈 Evolução do Ranking (Top 6)</span>
+        <span>📈 Evolução de Posição (todos os jogadores)</span>
         <span style={{ fontSize: 10, transition: "transform .2s", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
       </button>
       {open && (
-        <div style={{ marginTop: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 12px", overflowX: "auto" }}>
-          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 480, display: "block" }}>
-            {[0, 0.25, 0.5, 0.75, 1].map((f, i) => (
-              <g key={i}>
-                <line x1={padL} y1={y(maxPts * f)} x2={W - padR} y2={y(maxPts * f)} stroke={C.border} strokeWidth="1" />
-                <text x={padL - 6} y={y(maxPts * f) + 4} fill={C.muted} fontSize="10" textAnchor="end">{Math.round(maxPts * f)}</text>
-              </g>
-            ))}
-            {data.series.map((s, si) => {
-              const d = s.points.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(v)}`).join(" ");
-              return <g key={s.id}>
-                <path d={d} fill="none" stroke={lineColors[si % lineColors.length]} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-                <circle cx={x(n - 1)} cy={y(s.points[n - 1])} r="3.5" fill={lineColors[si % lineColors.length]} />
-              </g>;
-            })}
-          </svg>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, justifyContent: "center" }}>
-            {data.series.map((s, si) => (
-              <span key={s.id} style={{ fontSize: 11, color: C.text, display: "flex", alignItems: "center", gap: 4 }}>
-                <span style={{ width: 10, height: 3, background: lineColors[si % lineColors.length], borderRadius: 2, display: "inline-block" }} />
-                {s.name} <span style={{ color: C.muted }}>({s.points[s.points.length - 1]})</span>
-              </span>
-            ))}
+        <div style={{ marginTop: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px 12px" }}>
+          <select value={highlight} onChange={e => setHighlight(e.target.value)} style={INP({ marginBottom: 12, fontSize: 14, fontWeight: 700 })}>
+            <option value="">🔍 Destacar minha trajetória…</option>
+            {sortedNames.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <div style={{ overflowX: "auto" }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 520, display: "block" }}>
+              {levels.map((lv) => (
+                <g key={lv}>
+                  <line x1={padL} y1={y(lv)} x2={W - padR} y2={y(lv)} stroke={C.border} strokeWidth="1" strokeDasharray={lv === 1 ? "0" : "2 3"} />
+                  <text x={padL - 5} y={y(lv) + 4} fill={lv === 1 ? C.gold : C.muted} fontSize="10" textAnchor="end" fontWeight={lv === 1 ? 700 : 400}>{lv}º</text>
+                </g>
+              ))}
+              {/* linhas de todos, apagadas */}
+              {data.series.map((s) => {
+                if (s.id === highlight) return null;
+                const d = s.positions.map((pos, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(pos)}`).join(" ");
+                return <path key={s.id} d={d} fill="none" stroke={C.border} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity={highlight ? 0.3 : 0.55} />;
+              })}
+              {/* linha destacada por cima */}
+              {hl && (() => {
+                const d = hl.positions.map((pos, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(pos)}`).join(" ");
+                const lastPos = hl.positions[hl.positions.length - 1];
+                return <g>
+                  <path d={d} fill="none" stroke={C.gold} strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" />
+                  {hl.positions.map((pos, i) => <circle key={i} cx={x(i)} cy={y(pos)} r="3.5" fill={C.gold} />)}
+                  <text x={x(n - 1) + 8} y={y(lastPos) + 4} fill={C.gold} fontSize="12" fontWeight="900">{hl.name.split(" ")[0]} ({lastPos}º)</text>
+                </g>;
+              })()}
+            </svg>
+          </div>
+          <div style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8 }}>
+            {hl ? `Trajetória de ${hl.name}: melhor ${Math.min(...hl.positions)}º · pior ${Math.max(...hl.positions)}º` : "Escolha um nome acima pra destacar a trajetória. Eixo: 1º no topo, posição ao longo das rodadas."}
           </div>
         </div>
       )}
