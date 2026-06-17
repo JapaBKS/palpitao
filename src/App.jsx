@@ -357,9 +357,13 @@ function buildRankingText(ranked, totalCaixa) {
   lines.push("🏆 *BOLÃO DA COPA 2026* 🏆");
   lines.push(`_Atualizado em ${new Date().toLocaleDateString("pt-BR")}_`);
   lines.push("");
-  ranked.slice(0, 10).forEach((p, i) => {
-    const pos = i < 3 ? medals[i] : `${i + 1}º`;
-    lines.push(`${pos} *${p.name}* — ${p.total} pts`);
+  let pos = 0;
+  ranked.forEach((p) => {
+    if (!p.paid) return; // não-pagantes não entram no ranking de prêmio
+    pos++;
+    if (pos > 10) return;
+    const tag = pos <= 3 ? medals[pos - 1] : `${pos}º`;
+    lines.push(`${tag} *${p.name}* — ${p.total} pts`);
   });
   return lines.join("\n");
 }
@@ -1085,20 +1089,24 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
             <span style={{ fontSize: 10, color: C.muted }}>POS</span><span style={{ fontSize: 10, color: C.muted }}>NOME (Clique para abrir estatísticas)</span><span style={{ fontSize: 10, color: C.muted, textAlign: "right" }}>PONTOS</span>
             {!isMobile && <><span style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>10</span><span style={{ fontSize: 10, color: C.green, textAlign: "center" }}>7</span><span style={{ fontSize: 10, color: C.blue, textAlign: "center" }}>5</span></>}
           </div>
-          {ranked.map((p, i) => (
-            <div key={p.id} className="row-hover" onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: !p.paid ? "transparent" : i === 0 ? `${C.gold}0a` : i === 1 ? `${C.silver}0a` : i === 2 ? `${C.bronze}0a` : "transparent", cursor: "pointer", opacity: p.paid ? 1 : 0.4, filter: p.paid ? "none" : "grayscale(0.8)" }}>
-              <span style={{ display: "flex", alignItems: "center", fontSize: i < 3 ? (isMobile ? 17 : 20) : 13, color: i >= 3 ? C.muted : undefined }}>{i < 3 && p.paid ? medals[i] : `${i + 1}º`}</span>
+          {(() => { let _pos = 0; return ranked.map((p, i) => {
+            const paidPos = p.paid ? ++_pos : null; // posição contando só pagantes; não-pagantes não ocupam número
+            const isPodium = paidPos !== null && paidPos <= 3;
+            return (
+            <div key={p.id} className="row-hover" onClick={() => setStatsFor(p)} style={{ display: "grid", gridTemplateColumns: isMobile ? "40px 1fr 52px" : "44px 1fr 64px 40px 40px 40px", gap: 6, padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: !p.paid ? "transparent" : isPodium ? `${[C.gold, C.silver, C.bronze][paidPos - 1]}0a` : "transparent", cursor: "pointer", opacity: p.paid ? 1 : 0.4, filter: p.paid ? "none" : "grayscale(0.8)" }}>
+              <span style={{ display: "flex", alignItems: "center", fontSize: isPodium ? (isMobile ? 17 : 20) : 13, color: !p.paid ? C.muted : !isPodium ? C.muted : undefined }}>{isPodium ? medals[paidPos - 1] : p.paid ? `${paidPos}º` : "—"}</span>
               <span style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: isMobile ? 13 : 14, minWidth: 0, flexShrink: 1, textDecoration: p.paid ? "none" : "line-through", textDecorationColor: C.muted }}>{p.name}</span>
-                {(() => { const prev = prevPositions[p.id]; const delta = prev ? prev - (i + 1) : 0; return delta !== 0 ? <span style={{ fontSize: 10, fontWeight: 900, color: delta > 0 ? C.green : C.red, flexShrink: 0 }}>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</span> : null; })()}
+                {(() => { const prev = prevPositions[p.id]; const delta = prev ? prev - (i + 1) : 0; return p.paid && delta !== 0 ? <span style={{ fontSize: 10, fontWeight: 900, color: delta > 0 ? C.green : C.red, flexShrink: 0 }}>{delta > 0 ? `↑${delta}` : `↓${Math.abs(delta)}`}</span> : null; })()}
                 {!p.paid && <span style={{ fontSize: 9, background: `${C.muted}22`, color: C.muted, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>não pago</span>}
                 {p.paid && (p.champBonus + p.viceBonus + p.thirdBonus + p.brazilBonus) > 0 && <span style={{ fontSize: 9, background: `${C.gold}22`, color: C.gold, padding: "1px 5px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0 }}>🎁 +{p.champBonus + p.viceBonus + p.thirdBonus + p.brazilBonus}</span>}
                 {isMobile && <span style={{ marginLeft: "auto", display: "flex", gap: 5, flexShrink: 0 }}>{p.c10 > 0 && <span style={{ fontSize: 10, color: C.gold }}>🎯×{p.c10}</span>}{p.c7 > 0 && <span style={{ fontSize: 10, color: C.green }}>⭐×{p.c7}</span>}</span>}
               </span>
-              <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, display: "flex", alignItems: "center", justifyContent: "flex-end", color: !p.paid ? C.muted : i === 0 ? C.gold : i === 1 ? C.silver : i === 2 ? C.bronze : C.text }}>{p.total}</span>
+              <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 22 : 26, display: "flex", alignItems: "center", justifyContent: "flex-end", color: !p.paid ? C.muted : isPodium ? [C.gold, C.silver, C.bronze][paidPos - 1] : C.text }}>{p.total}</span>
               {!isMobile && <><span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.gold, fontWeight: 900 }}>{p.c10 || "—"}</span><span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.green, fontWeight: 900 }}>{p.c7 || "—"}</span><span style={{ textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", color: C.blue, fontWeight: 900 }}>{p.c5 || "—"}</span></>}
             </div>
-          ))}
+            );
+          }); })()}
         </div>
       )}
       {statsFor && <StatsModal participant={statsFor} matches={matches} preds={preds} onClose={() => setStatsFor(null)} />}
@@ -1547,7 +1555,8 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
 
   const stats = activePid ? getStats(activePid, matches, preds) : null;
   const fullRanked = getRanked(participants, matches, preds);
-  const myRank = activePid ? fullRanked.findIndex(p => p.id === activePid) + 1 : 0;
+  const activeUserPaid = participants.find(p => p.id === activePid)?.paid;
+  const myRank = (activePid && activeUserPaid) ? fullRanked.filter(p => p.paid).findIndex(p => p.id === activePid) + 1 : 0;
   const hasResults = matches.some(m => m.result);
   const isUnlocked = sessionUnlocked[activePid];
   const pendingCount = matches.filter(m => { if (isLocked(m.date)) return false; const p = preds[activePid]?.[m.id]; return !(p && p.a !== "" && p.b !== "" && p.a != null && p.b != null); }).length;
