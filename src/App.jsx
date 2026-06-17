@@ -502,6 +502,36 @@ function Avatar({ participant, size = 28 }) {
   return <span style={{ width: size, height: size, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4, fontWeight: 900, color: "#0008", background: avatarColor(participant?.name) }}>{initials}</span>;
 }
 
+// Comprime a imagem (recorta quadrado central, redimensiona p/ 256px, JPEG) → Blob leve
+function compressImage(file, maxSize = 256, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const side = Math.min(img.width, img.height);
+      const sx = (img.width - side) / 2, sy = (img.height - side) / 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = maxSize; canvas.height = maxSize;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, maxSize, maxSize);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error("Falha ao comprimir")), "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Imagem inválida")); };
+    img.src = url;
+  });
+}
+
+// Faz upload pro bucket 'avatars' do Supabase Storage e retorna a URL pública
+async function uploadAvatar(file, participantId) {
+  const blob = await compressImage(file);
+  const path = `${participantId}-${Date.now()}.jpg`;
+  const { error } = await supabase.storage.from("avatars").upload(path, blob, { contentType: "image/jpeg", upsert: true });
+  if (error) throw error;
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  return data.publicUrl;
+}
+
 function Toast({ message, type = "success", onDone }) {
   useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
   return <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: type === "error" ? "#c62828" : C.greenDim, color: "#fff", borderRadius: 20, padding: "12px 24px", fontWeight: 700, fontSize: 14, zIndex: 999, boxShadow: "0 4px 20px #000c", whiteSpace: "nowrap", pointerEvents: "none" }}>{message}</div>;
@@ -1263,7 +1293,20 @@ function TabChaveamento({ matches }) {
 }
 
 function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAccess, onAdminLogout }) {
-  const [name, setName] = useState(""); const [pin, setPin] = useState(""); const [editingId, setEditingId] = useState(null); const [editName, setEditName] = useState(""); const [editPin, setEditPin] = useState(""); const [editAvatar, setEditAvatar] = useState(""); const [authingId, setAuthingId] = useState(null); const [authPin, setAuthPin] = useState(""); const [authError, setAuthError] = useState("");
+  const [name, setName] = useState(""); const [pin, setPin] = useState(""); const [editingId, setEditingId] = useState(null); const [editName, setEditName] = useState(""); const [editPin, setEditPin] = useState(""); const [editAvatar, setEditAvatar] = useState(""); const [uploadingAv, setUploadingAv] = useState(false); const [authingId, setAuthingId] = useState(null); const [authPin, setAuthPin] = useState(""); const [authError, setAuthError] = useState("");
+
+  const handleAvatarFile = async (file, pid) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("Selecione um arquivo de imagem."); return; }
+    setUploadingAv(true);
+    try {
+      const url = await uploadAvatar(file, pid || editingId || "novo");
+      setEditAvatar(url);
+    } catch (e) {
+      console.error(e);
+      alert("Não foi possível enviar a foto. Verifique se o bucket 'avatars' existe e é público no Supabase Storage.");
+    } finally { setUploadingAv(false); }
+  };
 
   const add = () => {
     if (!name.trim()) return alert("Por favor, digite seu nome!");
@@ -1334,11 +1377,18 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAc
               </div>
               {isAdmin && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>FOTO / EMOJI <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— um emoji (ex: 🦊) ou link de imagem (https://…)</span></label>
+                  <label style={{ fontSize: 11, color: C.muted, fontWeight: 700, letterSpacing: 1 }}>FOTO / EMOJI</label>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <Avatar participant={{ name: editName, avatar: editAvatar }} size={42} />
-                    <input value={editAvatar} onChange={e => setEditAvatar(e.target.value)} onKeyDown={e => e.key === "Enter" && saveEdit(editingId)} placeholder="🦊 ou https://..." style={INP({ flex: 1 })} />
-                    {editAvatar && <button onClick={() => setEditAvatar("")} style={GHOST_BTN({ padding: "6px 10px", minHeight: 36, color: C.red, borderColor: `${C.red}55` })}>Limpar</button>}
+                    <Avatar participant={{ name: editName, avatar: editAvatar }} size={48} />
+                    <label style={{ ...BTN({ padding: "8px 14px", fontSize: 13, cursor: uploadingAv ? "default" : "pointer", opacity: uploadingAv ? 0.6 : 1 }), display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {uploadingAv ? "⏳ Enviando..." : "📷 Enviar foto"}
+                      <input type="file" accept="image/*" disabled={uploadingAv} onChange={e => { handleAvatarFile(e.target.files?.[0], editingId); e.target.value = ""; }} style={{ display: "none" }} />
+                    </label>
+                    {editAvatar && <button onClick={() => setEditAvatar("")} style={GHOST_BTN({ padding: "8px 12px", minHeight: 36, color: C.red, borderColor: `${C.red}55` })}>Remover</button>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: C.muted }}>ou emoji / link:</span>
+                    <input value={editAvatar} onChange={e => setEditAvatar(e.target.value)} placeholder="🦊 ou https://..." style={INP({ flex: 1, fontSize: 13, padding: "6px 10px" })} />
                   </div>
                 </div>
               )}
