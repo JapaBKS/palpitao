@@ -1272,77 +1272,121 @@ function teamFlag(name) {
 }
 
 function TabChaveamento({ matches }) {
+  const isMobile = useIsMobile();
   const columns = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
   const finalM = matches.find(m => m.phase === "Final" && m.result && !m.live);
   const champion = finalM ? (finalM.result.a > finalM.result.b ? finalM.teamA : finalM.result.b > finalM.result.a ? finalM.teamB : null) : null;
   const isDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo/i.test(t);
 
+  // Fase padrão no mobile: a primeira que ainda tem jogo não decidido, senão a primeira com jogos
+  const [selPhase, setSelPhase] = useState(null);
+  const defaultPhase = columns.find(ph => matches.some(m => m.phase === ph && (!m.result || m.live))) || columns.find(ph => matches.some(m => m.phase === ph)) || columns[0];
+  const phaseToShow = selPhase || defaultPhase;
+
   const TeamRow = ({ name, score, win, lose, live }) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", borderRadius: 6, background: win ? `${C.green}1a` : "transparent", opacity: lose ? 0.5 : 1 }}>
-      <span style={{ fontSize: 16, width: 20, textAlign: "center", flexShrink: 0 }}>{teamFlag(name) || (isDefined(name) ? "⚽" : "·")}</span>
-      <span style={{ flex: 1, fontSize: 13, fontWeight: win ? 900 : 700, color: isDefined(name) ? (win ? C.green : C.text) : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isDefined(name) ? "normal" : "italic", textDecoration: lose ? "line-through" : "none", textDecorationColor: `${C.muted}99` }}>{name}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", borderRadius: 6, background: win ? `${C.green}1a` : "transparent", opacity: lose ? 0.5 : 1 }}>
+      <span style={{ fontSize: 17, width: 22, textAlign: "center", flexShrink: 0 }}>{teamFlag(name) || (isDefined(name) ? "⚽" : "·")}</span>
+      <span style={{ flex: 1, fontSize: 14, fontWeight: win ? 900 : 700, color: isDefined(name) ? (win ? C.green : C.text) : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isDefined(name) ? "normal" : "italic", textDecoration: lose ? "line-through" : "none", textDecorationColor: `${C.muted}99` }}>{name}</span>
       {win && <span style={{ fontSize: 10, color: C.green, flexShrink: 0 }}>▲</span>}
-      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 18, minWidth: 18, textAlign: "center", color: score == null ? C.border : win ? C.green : live ? C.red : C.text, flexShrink: 0 }}>{score == null ? "–" : score}</span>
+      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 20, minWidth: 20, textAlign: "center", color: score == null ? C.border : win ? C.green : live ? C.red : C.text, flexShrink: 0 }}>{score == null ? "–" : score}</span>
     </div>
   );
 
-  return (
-    <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
-      {champion && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: `linear-gradient(135deg, ${C.gold}22, ${C.card})`, border: `1px solid ${C.gold}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, minWidth: 280 }}>
-          <span style={{ fontSize: 28 }}>🏆</span>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>CAMPEÃO DO MUNDO</div>
-            <div style={{ fontWeight: 900, fontSize: 20, color: C.text }}>{teamFlag(champion)} {champion}</div>
+  const MatchCard = ({ m, isFinal }) => {
+    const h2h = getGroupStageMeeting(m.teamA, m.teamB, matches);
+    const aWin = m.result && m.result.a > m.result.b;
+    const bWin = m.result && m.result.b > m.result.a;
+    const decided = m.result && !m.live;
+    return (
+      <div style={{ background: C.card, border: `1px solid ${m.live && m.result ? C.red + "66" : isFinal && m.result ? C.gold : C.border}`, borderRadius: 10, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2, minHeight: 12 }}>
+          {m.date ? <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>{m.date}</div> : <span />}
+          {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
+        </div>
+        <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} />
+        <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} />
+        {h2h && (
+          <div style={{ fontSize: 9, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 4, marginTop: 3 }}>
+            🔁 Nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.result.a}×{h2h.result.b}</span>
           </div>
-          <span style={{ fontSize: 28 }}>🏆</span>
+        )}
+      </div>
+    );
+  };
+
+  const ChampionBanner = champion ? (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: `linear-gradient(135deg, ${C.gold}22, ${C.card})`, border: `1px solid ${C.gold}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16 }}>
+      <span style={{ fontSize: 28 }}>🏆</span>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 10, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>CAMPEÃO DO MUNDO</div>
+        <div style={{ fontWeight: 900, fontSize: 20, color: C.text }}>{teamFlag(champion)} {champion}</div>
+      </div>
+      <span style={{ fontSize: 28 }}>🏆</span>
+    </div>
+  ) : null;
+
+  const LiveNote = matches.some(m => m.live && m.result) ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.red, background: `${C.red}12`, border: `1px solid ${C.red}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>
+      <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, display: "inline-block", animation: "livePulse 1.2s ease-in-out infinite" }} />
+      Classificados em <b>tempo real</b> com jogos ao vivo — definido de vez só no apito final.
+    </div>
+  ) : null;
+
+  // 📱 MOBILE: seletor de fase + lista vertical (rola pra baixo, sem rolar pro lado)
+  if (isMobile) {
+    return (
+      <div>
+        {ChampionBanner}
+        {LiveNote}
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 8, marginBottom: 4 }}>
+          {columns.map(ph => {
+            const count = matches.filter(m => m.phase === ph).length;
+            const active = ph === phaseToShow;
+            const isFinal = ph === "Final";
+            return (
+              <button key={ph} onClick={() => setSelPhase(ph)} style={{ flexShrink: 0, border: `1px solid ${active ? (isFinal ? C.gold : C.green) : C.border}`, background: active ? (isFinal ? `${C.gold}1a` : `${C.green}1a`) : C.card, color: active ? (isFinal ? C.gold : C.green) : C.muted, borderRadius: 20, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                {isFinal ? "🏆 " : ""}{ph.replace(" de Final", "").replace("3º Lugar", "3º L.")}{count > 0 ? ` (${count})` : ""}
+              </button>
+            );
+          })}
         </div>
-      )}
-      {matches.some(m => m.live && m.result) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.red, background: `${C.red}12`, border: `1px solid ${C.red}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, minWidth: 280 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, display: "inline-block", animation: "livePulse 1.2s ease-in-out infinite" }} />
-          Classificados em <b>tempo real</b> com jogos ao vivo — definido de vez só no apito final.
+        <div style={{ marginTop: 8 }}>
+          {(() => {
+            const ms = matches.filter(m => m.phase === phaseToShow);
+            if (ms.length === 0) return <Empty icon="🌳" msg="Esta fase ainda será definida." />;
+            return <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{ms.map(m => <MatchCard key={m.id} m={m} isFinal={phaseToShow === "Final"} />)}</div>;
+          })()}
         </div>
-      )}
-      <div style={{ display: "flex", gap: 20, minWidth: "max-content", padding: "10px 0" }}>
-        {columns.map(ph => {
-          const ms = matches.filter(m => m.phase === ph);
-          const isFinal = ph === "Final";
-          return (
-            <div key={ph} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 250, justifyContent: "space-around" }}>
-              <div style={{ textAlign: "center", color: isFinal ? "#06090a" : C.gold, fontWeight: 900, marginBottom: 4, fontSize: 12, letterSpacing: 1, background: isFinal ? C.gold : C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${isFinal ? C.gold : C.border}` }}>
-                {isFinal ? "🏆 " : ""}{ph.toUpperCase()}
-              </div>
-              {ms.length === 0 ? (
-                <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>
-                  Aguardando definições...
+      </div>
+    );
+  }
+
+  // 🖥️ DESKTOP: colunas horizontais
+  return (
+    <div>
+      {ChampionBanner}
+      {LiveNote}
+      <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
+        <div style={{ display: "flex", gap: 20, minWidth: "max-content", padding: "10px 0" }}>
+          {columns.map(ph => {
+            const ms = matches.filter(m => m.phase === ph);
+            const isFinal = ph === "Final";
+            return (
+              <div key={ph} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 250, justifyContent: "space-around" }}>
+                <div style={{ textAlign: "center", color: isFinal ? "#06090a" : C.gold, fontWeight: 900, marginBottom: 4, fontSize: 12, letterSpacing: 1, background: isFinal ? C.gold : C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${isFinal ? C.gold : C.border}` }}>
+                  {isFinal ? "🏆 " : ""}{ph.toUpperCase()}
                 </div>
-              ) : (
-                ms.map(m => {
-                  const h2h = getGroupStageMeeting(m.teamA, m.teamB, matches);
-                  const aWin = m.result && m.result.a > m.result.b;
-                  const bWin = m.result && m.result.b > m.result.a;
-                  const decided = m.result && !m.live;
-                  return (
-                  <div key={m.id} style={{ background: C.card, border: `1px solid ${m.live && m.result ? C.red + "66" : isFinal && m.result ? C.gold : C.border}`, borderRadius: 10, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2, minHeight: 12 }}>
-                      {m.date ? <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>{m.date}</div> : <span />}
-                      {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
-                    </div>
-                    <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} />
-                    <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} />
-                    {h2h && (
-                      <div style={{ fontSize: 9, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 4, marginTop: 3 }}>
-                        🔁 Nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.result.a}×{h2h.result.b}</span>
-                      </div>
-                    )}
+                {ms.length === 0 ? (
+                  <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>
+                    Aguardando definições...
                   </div>
-                  );
-                })
-              )}
-            </div>
-          );
-        })}
+                ) : (
+                  ms.map(m => <MatchCard key={m.id} m={m} isFinal={isFinal} />)
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
