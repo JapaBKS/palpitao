@@ -236,10 +236,10 @@ const ALL_TEAMS = Object.values(GRUPOS).flat().sort((a, b) => a.localeCompare(b,
 const TEAM_TO_GROUP = {};
 Object.entries(GRUPOS).forEach(([letter, teams]) => { teams.forEach(team => { TEAM_TO_GROUP[team.toLowerCase()] = letter; }); });
 
-function getGroupStandings(matches) {
+function getGroupStandings(matches, includeLive = true) {
   const st = {};
   Object.keys(GRUPOS).forEach(g => { st[g] = GRUPOS[g].map(t => ({ team: t, pts: 0, gf: 0, ga: 0, gd: 0, pld: 0 })); });
-  const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result && !m.live);
+  const groupMatches = matches.filter(m => m.phase === "Fase de Grupos" && m.result && (includeLive || !m.live));
   groupMatches.forEach(m => {
     let gA = TEAM_TO_GROUP[m.teamA.toLowerCase()], gB = TEAM_TO_GROUP[m.teamB.toLowerCase()];
     if(!gA) Object.keys(TEAM_TO_GROUP).forEach(k => { if(m.teamA.toLowerCase().includes(k)) gA = TEAM_TO_GROUP[k]; });
@@ -1199,7 +1199,13 @@ function TabTabelas({ matches }) {
 
   return (
     <div>
-      <Divider label="Classificação Oficial dos Grupos" />
+      <Divider label="Classificação dos Grupos" />
+      {matches.some(m => m.phase === "Fase de Grupos" && m.live && m.result) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.red, background: `${C.red}12`, border: `1px solid ${C.red}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 14 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, display: "inline-block", animation: "livePulse 1.2s ease-in-out infinite" }} />
+          Classificação atualizada com jogos <b>ao vivo</b> — pode mudar até o apito final.
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
         {Object.keys(st).map(g => (
           <div key={g} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
@@ -1252,6 +1258,12 @@ function TabChaveamento({ matches }) {
   
   return (
     <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
+      {matches.some(m => m.live && m.result) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.red, background: `${C.red}12`, border: `1px solid ${C.red}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, minWidth: 280 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, display: "inline-block", animation: "livePulse 1.2s ease-in-out infinite" }} />
+          Classificados em <b>tempo real</b> com jogos ao vivo — definido de vez só no apito final.
+        </div>
+      )}
       <div style={{ display: "flex", gap: 24, minWidth: "max-content", padding: "10px 0" }}>
         {columns.map(ph => {
           const ms = matches.filter(m => m.phase === ph);
@@ -1442,8 +1454,8 @@ function TabParticipantes({ participants, onChange, onDelete, isAdmin, onAdminAc
 
 /* ── MOTOR INTELIGENTE DE CHAVEAMENTO AUTOMÁTICO (REATIVO) ── */
 function processKnockout(currentMatches) {
-  // 1. Calcula a Fase de Grupos
-  const st = getGroupStandings(currentMatches);
+  // 1. Calcula a Fase de Grupos (INCLUI parciais ao vivo → classificados em tempo real)
+  const st = getGroupStandings(currentMatches, true);
   const firsts = {}, seconds = {};
   let thirdsList = [];
   Object.keys(st).forEach(g => {
@@ -1500,8 +1512,8 @@ function processKnockout(currentMatches) {
   
   // Helpers para puxar Vencedor (W) e Perdedor (L) dinamicamente
   const getM = (id) => nextMatches.find(m => m.id === id);
-  const getW = (id) => { const m = getM(id); return m && m.result && !m.live ? (m.result.a > m.result.b ? m.teamA : (m.result.b > m.result.a ? m.teamB : m.teamA)) : null; };
-  const getL = (id) => { const m = getM(id); return m && m.result && !m.live ? (m.result.a > m.result.b ? m.teamB : (m.result.b > m.result.a ? m.teamA : m.teamB)) : null; };
+  const getW = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamA : (m.result.b > m.result.a ? m.teamB : m.teamA)) : null; };
+  const getL = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamB : (m.result.b > m.result.a ? m.teamA : m.teamB)) : null; };
 
   // 3. Garante que todos os 104 jogos existam na tela
   K_DEF.forEach(def => {
@@ -2003,7 +2015,7 @@ export default function BolaoApp() {
       if (toStart.length === 0) return;
       const ids = new Set(toStart.map(m => m.id));
       const updated = ms.map(m => ids.has(m.id) ? { ...m, result: { a: 0, b: 0 }, live: true } : m);
-      smRef.current(updated);
+      smRef.current(processKnockout(updated));
     };
     autoStart(); // verifica na hora
     const id = setInterval(autoStart, 30000); // e a cada 30s
