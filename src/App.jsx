@@ -1252,25 +1252,66 @@ function TabTabelas({ matches }) {
 }
 
 /* ── ABA 3: ÁRVORE GRÁFICA DO CHAVEAMENTO DO MATA-MATA ── */
+// Bandeira (emoji) por nome de seleção em PT-BR. Fallback: vazio.
+const TEAM_FLAGS = {
+  "brasil": "🇧🇷", "argentina": "🇦🇷", "franca": "🇫🇷", "inglaterra": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "espanha": "🇪🇸", "portugal": "🇵🇹", "alemanha": "🇩🇪",
+  "paises baixos": "🇳🇱", "holanda": "🇳🇱", "belgica": "🇧🇪", "croacia": "🇭🇷", "italia": "🇮🇹", "uruguai": "🇺🇾", "colombia": "🇨🇴",
+  "mexico": "🇲🇽", "estados unidos": "🇺🇸", "eua": "🇺🇸", "canada": "🇨🇦", "japao": "🇯🇵", "coreia do sul": "🇰🇷", "coreia": "🇰🇷",
+  "marrocos": "🇲🇦", "senegal": "🇸🇳", "gana": "🇬🇭", "nigeria": "🇳🇬", "camaroes": "🇨🇲", "egito": "🇪🇬", "argelia": "🇩🇿", "tunisia": "🇹🇳",
+  "costa do marfim": "🇨🇮", "africa do sul": "🇿🇦", "australia": "🇦🇺", "equador": "🇪🇨", "peru": "🇵🇪", "chile": "🇨🇱", "paraguai": "🇵🇾",
+  "venezuela": "🇻🇪", "bolivia": "🇧🇴", "suica": "🇨🇭", "servia": "🇷🇸", "dinamarca": "🇩🇰", "polonia": "🇵🇱", "suecia": "🇸🇪", "austria": "🇦🇹",
+  "ucrania": "🇺🇦", "pais de gales": "🏴󠁧󠁢󠁷󠁬󠁳󠁿", "escocia": "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "ira": "🇮🇷", "arabia saudita": "🇸🇦", "catar": "🇶🇦", "qatar": "🇶🇦",
+  "haiti": "🇭🇹", "noruega": "🇳🇴", "turquia": "🇹🇷", "grecia": "🇬🇷", "hungria": "🇭🇺", "republica tcheca": "🇨🇿", "tchequia": "🇨🇿",
+  "romenia": "🇷🇴", "panama": "🇵🇦", "costa rica": "🇨🇷", "honduras": "🇭🇳", "jamaica": "🇯🇲", "nova zelandia": "🇳🇿", "uzbequistao": "🇺🇿",
+  "jordania": "🇯🇴", "iraque": "🇮🇶", "emirados arabes": "🇦🇪", "cabo verde": "🇨🇻", "angola": "🇦🇴",
+};
+function teamFlag(name) {
+  if (!name) return "";
+  const key = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  return TEAM_FLAGS[key] || "";
+}
+
 function TabChaveamento({ matches }) {
-  // A correção foi adicionar o "3º Lugar" antes da "Final" neste array:
   const columns = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
-  
+  const finalM = matches.find(m => m.phase === "Final" && m.result && !m.live);
+  const champion = finalM ? (finalM.result.a > finalM.result.b ? finalM.teamA : finalM.result.b > finalM.result.a ? finalM.teamB : null) : null;
+  const isDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo/i.test(t);
+
+  const TeamRow = ({ name, score, win, lose, live }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", borderRadius: 6, background: win ? `${C.green}1a` : "transparent", opacity: lose ? 0.5 : 1 }}>
+      <span style={{ fontSize: 16, width: 20, textAlign: "center", flexShrink: 0 }}>{teamFlag(name) || (isDefined(name) ? "⚽" : "·")}</span>
+      <span style={{ flex: 1, fontSize: 13, fontWeight: win ? 900 : 700, color: isDefined(name) ? (win ? C.green : C.text) : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isDefined(name) ? "normal" : "italic", textDecoration: lose ? "line-through" : "none", textDecorationColor: `${C.muted}99` }}>{name}</span>
+      {win && <span style={{ fontSize: 10, color: C.green, flexShrink: 0 }}>▲</span>}
+      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 18, minWidth: 18, textAlign: "center", color: score == null ? C.border : win ? C.green : live ? C.red : C.text, flexShrink: 0 }}>{score == null ? "–" : score}</span>
+    </div>
+  );
+
   return (
     <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
+      {champion && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: `linear-gradient(135deg, ${C.gold}22, ${C.card})`, border: `1px solid ${C.gold}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16, minWidth: 280 }}>
+          <span style={{ fontSize: 28 }}>🏆</span>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>CAMPEÃO DO MUNDO</div>
+            <div style={{ fontWeight: 900, fontSize: 20, color: C.text }}>{teamFlag(champion)} {champion}</div>
+          </div>
+          <span style={{ fontSize: 28 }}>🏆</span>
+        </div>
+      )}
       {matches.some(m => m.live && m.result) && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: C.red, background: `${C.red}12`, border: `1px solid ${C.red}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, minWidth: 280 }}>
           <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, display: "inline-block", animation: "livePulse 1.2s ease-in-out infinite" }} />
           Classificados em <b>tempo real</b> com jogos ao vivo — definido de vez só no apito final.
         </div>
       )}
-      <div style={{ display: "flex", gap: 24, minWidth: "max-content", padding: "10px 0" }}>
+      <div style={{ display: "flex", gap: 20, minWidth: "max-content", padding: "10px 0" }}>
         {columns.map(ph => {
           const ms = matches.filter(m => m.phase === ph);
+          const isFinal = ph === "Final";
           return (
-            <div key={ph} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 240, justifyContent: "space-around" }}>
-              <div style={{ textAlign: "center", color: C.gold, fontWeight: 900, marginBottom: 8, fontSize: 13, background: C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${C.border}` }}>
-                {ph.toUpperCase()}
+            <div key={ph} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 250, justifyContent: "space-around" }}>
+              <div style={{ textAlign: "center", color: isFinal ? "#06090a" : C.gold, fontWeight: 900, marginBottom: 4, fontSize: 12, letterSpacing: 1, background: isFinal ? C.gold : C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${isFinal ? C.gold : C.border}` }}>
+                {isFinal ? "🏆 " : ""}{ph.toUpperCase()}
               </div>
               {ms.length === 0 ? (
                 <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>
@@ -1278,21 +1319,21 @@ function TabChaveamento({ matches }) {
                 </div>
               ) : (
                 ms.map(m => {
-                  const h2h = (ph !== "Fase de Grupos") ? getGroupStageMeeting(m.teamA, m.teamB, matches) : null;
+                  const h2h = getGroupStageMeeting(m.teamA, m.teamB, matches);
+                  const aWin = m.result && m.result.a > m.result.b;
+                  const bWin = m.result && m.result.b > m.result.a;
+                  const decided = m.result && !m.live;
                   return (
-                  <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
-                    {m.date && <div style={{ fontSize: 9, color: C.muted, fontWeight: 700, marginBottom: -2 }}>{m.date}</div>}
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.a > m.result.b ? C.green : C.text }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamA}</span>
-                      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.a > m.result.b ? C.green : C.gold }}>{m.result ? m.result.a : "-"}</span>
+                  <div key={m.id} style={{ background: C.card, border: `1px solid ${m.live && m.result ? C.red + "66" : isFinal && m.result ? C.gold : C.border}`, borderRadius: 10, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2, minHeight: 12 }}>
+                      {m.date ? <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>{m.date}</div> : <span />}
+                      {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700, color: m.result && m.result.b > m.result.a ? C.green : C.text }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{m.teamB}</span>
-                      <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: m.result && m.result.b > m.result.a ? C.green : C.gold }}>{m.result ? m.result.b : "-"}</span>
-                    </div>
+                    <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} />
+                    <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} />
                     {h2h && (
-                      <div style={{ fontSize: 10, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 5, marginTop: 1 }}>
-                        🔁 Já se enfrentaram nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.teamA} {h2h.result.a}×{h2h.result.b} {h2h.teamB}</span>
+                      <div style={{ fontSize: 9, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 4, marginTop: 3 }}>
+                        🔁 Nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.result.a}×{h2h.result.b}</span>
                       </div>
                     )}
                   </div>
