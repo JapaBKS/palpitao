@@ -1264,6 +1264,7 @@ const TEAM_FLAGS = {
   "haiti": "🇭🇹", "noruega": "🇳🇴", "turquia": "🇹🇷", "grecia": "🇬🇷", "hungria": "🇭🇺", "republica tcheca": "🇨🇿", "tchequia": "🇨🇿",
   "romenia": "🇷🇴", "panama": "🇵🇦", "costa rica": "🇨🇷", "honduras": "🇭🇳", "jamaica": "🇯🇲", "nova zelandia": "🇳🇿", "uzbequistao": "🇺🇿",
   "jordania": "🇯🇴", "iraque": "🇮🇶", "emirados arabes": "🇦🇪", "cabo verde": "🇨🇻", "angola": "🇦🇴",
+  "bosnia": "🇧🇦", "bosnia e herzegovina": "🇧🇦", "rd congo": "🇨🇩", "republica democratica do congo": "🇨🇩", "congo": "🇨🇬",
 };
 function teamFlag(name) {
   if (!name) return "";
