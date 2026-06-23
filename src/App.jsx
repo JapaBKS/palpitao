@@ -260,7 +260,15 @@ function getGroupStandings(matches, includeLive = true) {
 }
 
 /* ── Helpers: rodada, evolução, confronto direto ── */
+// "Dia lógico" do jogo: como os jogos normalmente começam à tarde/noite (após o meio-dia),
+// um jogo de madrugada (antes do meio-dia) é tratado como pertencente ao dia ANTERIOR —
+// a continuação da "noite de ontem" — para não passar batido na aba "Hoje".
 function getDayKey(dateStr) {
+  const d = parseMatchDate(dateStr);
+  if (d) {
+    const shifted = d.getHours() < 12 ? new Date(d.getTime() - 24 * 60 * 60 * 1000) : d;
+    return `${String(shifted.getDate()).padStart(2, "0")}/${String(shifted.getMonth() + 1).padStart(2, "0")}`;
+  }
   if (!dateStr) return null;
   const m = dateStr.match(/(\d{2})\/(\d{2})/);
   return m ? `${m[1]}/${m[2]}` : null;
@@ -885,11 +893,13 @@ function ScoringLegend() {
 
 function todayDDMM() {
   const d = new Date();
-  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  // Mesmo critério: antes do meio-dia, "hoje" ainda é o dia anterior (a noite que está rolando).
+  const shifted = d.getHours() < 12 ? new Date(d.getTime() - 24 * 60 * 60 * 1000) : d;
+  return `${String(shifted.getDate()).padStart(2,"0")}/${String(shifted.getMonth()+1).padStart(2,"0")}`;
 }
 
 function applyFilter(matches, filter) {
-  if (filter === "hoje") return matches.filter(m => m.date && m.date.startsWith(todayDDMM()));
+  if (filter === "hoje") return matches.filter(m => getDayKey(m.date) === todayDDMM());
   if (filter === "grupos") return matches.filter(m => m.phase === "Fase de Grupos");
   if (filter === "mata") return matches.filter(m => MATA_MATA.includes(m.phase));
   if (filter.startsWith("grupo-")) {
@@ -1686,7 +1696,7 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
 
   // Jogos de hoje + em andamento (ao vivo) → acesso rápido pro admin lançar placar sem rolar
   const todayMatches = matches
-    .filter(m => (m.date && m.date.startsWith(todayDDMM())) || (m.live && m.result) || (isLocked(m.date) && !m.result && parseMatchDate(m.date)))
+    .filter(m => (getDayKey(m.date) === todayDDMM()) || (m.live && m.result) || (isLocked(m.date) && !m.result && parseMatchDate(m.date)))
     .filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
     .sort((a, b) => { const da = parseMatchDate(a.date), db = parseMatchDate(b.date); if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db; });
 
