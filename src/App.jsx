@@ -893,9 +893,7 @@ function ScoringLegend() {
 
 function todayDDMM() {
   const d = new Date();
-  // Mesmo critério: antes do meio-dia, "hoje" ainda é o dia anterior (a noite que está rolando).
-  const shifted = d.getHours() < 12 ? new Date(d.getTime() - 24 * 60 * 60 * 1000) : d;
-  return `${String(shifted.getDate()).padStart(2,"0")}/${String(shifted.getMonth()+1).padStart(2,"0")}`;
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
 }
 
 function applyFilter(matches, filter) {
