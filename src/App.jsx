@@ -1984,7 +1984,26 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
             <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>🔴 Parcial = tabela mexe ao vivo, mas não conta como oficial · ✓ Finalizar = resultado definitivo</div>
           </div>
         ) : (
-          <><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>{m.result ? (() => { const ds = displayScore(m); return <button onClick={() => isAdmin && startEdit(m)} style={{ background: m.live ? `${C.red}12` : `${C.green}12`, border: `1px solid ${m.live ? C.red : C.greenDim}`, borderRadius: 8, color: m.live ? C.red : C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20, position: "relative" }}>{ds.a} × {ds.b}{ds.isET && <span style={{ position: "absolute", top: -7, right: -7, fontSize: 8, fontFamily: "system-ui", fontWeight: 900, background: C.gold, color: "#000", borderRadius: 4, padding: "1px 3px" }}>{m.result.pen ? "PEN" : "PROR"}</span>}</button>; })() : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>}<span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></>
+          <>
+            {(() => {
+              const ds = m.result ? displayScore(m) : null;
+              const isKO = isKnockoutMatch(m);
+              const decided = m.result && !m.live;
+              const koInfo = (isKO && m.result) ? resolveKO(m.result, m.teamA, m.teamB) : null;
+              const adv = koInfo ? koInfo.advancer : null;
+              const aWin = decided && isKO && adv === m.teamA;
+              const bWin = decided && isKO && adv === m.teamB;
+              const tag = koInfo && koInfo.hadPK ? "PÊN" : koInfo && koInfo.hadET ? "PRO" : null;
+              const nameStyle = (win, lose) => ({ flex: 1, fontWeight: win ? 900 : 700, fontSize: 14, color: win ? C.green : C.text, opacity: lose ? 0.5 : 1, textDecoration: lose ? "line-through" : "none", textDecorationColor: `${C.muted}99`, display: "inline-flex", alignItems: "center", gap: 5 });
+              return <>
+                <span style={nameStyle(aWin, bWin)}>{aWin && <span style={{ fontSize: 8.5, fontWeight: 900, color: "#06090a", background: C.green, borderRadius: 4, padding: "2px 5px", flexShrink: 0 }}>✓{tag ? " " + tag : ""}</span>}{m.teamA}</span>
+                {m.result
+                  ? <button onClick={() => isAdmin && startEdit(m)} style={{ background: m.live ? `${C.red}12` : `${C.green}12`, border: `1px solid ${m.live ? C.red : C.greenDim}`, borderRadius: 8, color: m.live ? C.red : C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20, position: "relative", flexShrink: 0 }}>{ds.a} × {ds.b}{ds.isET && <span style={{ position: "absolute", top: -7, right: -7, fontSize: 8, fontFamily: "system-ui", fontWeight: 900, background: C.gold, color: "#000", borderRadius: 4, padding: "1px 3px" }}>{m.result.pen ? "PEN" : "PROR"}</span>}</button>
+                  : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden", flexShrink: 0 })}>+ Inserir Placar</button>}
+                <span style={{ ...nameStyle(bWin, aWin), justifyContent: "flex-end", textAlign: "right" }}>{m.teamB}{bWin && <span style={{ fontSize: 8.5, fontWeight: 900, color: "#06090a", background: C.green, borderRadius: 4, padding: "2px 5px", flexShrink: 0 }}>✓{tag ? " " + tag : ""}</span>}</span>
+              </>;
+            })()}
+          </>
         )}
       </div>
     </div>
