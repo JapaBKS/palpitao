@@ -1417,29 +1417,36 @@ function TabChaveamento({ matches }) {
     return null;
   };
 
-  // "Times possíveis" de um slot ainda não definido: os 2 times do jogo de origem (ex: "Brasil ou Escócia")
+  // Referência da origem de um slot: sempre devolve o número do jogo de origem (ex: J89);
+  // se os 2 times desse jogo já estão definidos, também devolve eles ("Brasil ou Escócia").
   const possibleFor = (matchId, side) => {
     const orig = originOf(matchId);
     if (!orig) return null;
     const o = side === "a" ? orig.a : orig.b;
     const src = byId(o.id);
-    if (!src) return null;
-    const t1 = src.teamA, t2 = src.teamB;
-    if (isDefined(t1) && isDefined(t2)) return { teams: [t1, t2], kind: o.kind, srcNum: o.id.replace("m_", "") };
-    return null;
+    const srcNum = o.id.replace("m_", "");
+    const t1 = src?.teamA, t2 = src?.teamB;
+    const teams = (src && isDefined(t1) && isDefined(t2)) ? [t1, t2] : null;
+    return { teams, kind: o.kind, srcNum };
   };
 
   const TeamRow = ({ name, score, win, lose, live, possible }) => {
     const defined = isDefined(name);
-    // Se não há time definido mas há "possíveis", mostra "🇧🇷 Brasil ou 🏴 Escócia"
+    // Slot ainda não definido: mostra de onde vem (nº do jogo) e os possíveis, se já dá pra saber
     if (!defined && possible) {
+      const verbo = possible.kind === "L" ? "Perdedor" : "Vencedor";
       return (
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6 }}>
-          <span style={{ fontSize: 13, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[0])} {possible.teams[0]}</span>
-            <span style={{ color: C.border, fontWeight: 400 }}> ou </span>
-            <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[1])} {possible.teams[1]}</span>
-          </span>
+          <span style={{ fontSize: 11, fontWeight: 900, color: C.gold, flexShrink: 0, background: `${C.gold}1a`, borderRadius: 5, padding: "2px 6px" }}>J{possible.srcNum}</span>
+          {possible.teams ? (
+            <span style={{ fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[0])} {possible.teams[0]}</span>
+              <span style={{ color: C.muted, fontWeight: 400 }}> ou </span>
+              <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[1])} {possible.teams[1]}</span>
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: C.muted, fontStyle: "italic", whiteSpace: "nowrap" }}>{verbo} do J{possible.srcNum}</span>
+          )}
         </div>
       );
     }
