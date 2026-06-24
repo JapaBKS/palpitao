@@ -1402,15 +1402,16 @@ function TabChaveamento({ matches }) {
   const isDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo|3º/i.test(t);
   const byId = (id) => matches.find(m => m.id === id);
 
-  // Mapa de origem: qual(is) jogo(s) alimenta(m) cada slot de cada jogo do mata-mata.
-  // m_89 = W(m_73) vs W(m_74); m_97 = W(m_89) vs W(m_90); etc. m_103 = L(101) vs L(102); m_104 = W(101) vs W(102)
+  // Mapa de origem OFICIAL FIFA: qual(is) jogo(s) alimenta(m) cada jogo do mata-mata.
+  const ORIGIN_MAP = {
+    m_89: [74, 77], m_90: [73, 75], m_91: [76, 78], m_92: [79, 80], m_93: [83, 84], m_94: [81, 82], m_95: [86, 88], m_96: [85, 87],
+    m_97: [89, 90], m_98: [93, 94], m_99: [91, 92], m_100: [95, 96],
+    m_101: [97, 98], m_102: [99, 100],
+  };
   const originOf = (matchId) => {
     const n = parseInt((matchId || "").replace("m_", ""));
     if (isNaN(n) || n < 89) return null; // 32-avos não têm origem (vêm dos grupos)
-    if (n >= 89 && n <= 96) { const base = 73 + (n - 89) * 2; return { a: { id: `m_${base}`, kind: "W" }, b: { id: `m_${base + 1}`, kind: "W" } }; }
-    if (n >= 97 && n <= 100) { const base = 89 + (n - 97) * 2; return { a: { id: `m_${base}`, kind: "W" }, b: { id: `m_${base + 1}`, kind: "W" } }; }
-    if (n === 101) return { a: { id: "m_97", kind: "W" }, b: { id: "m_98", kind: "W" } };
-    if (n === 102) return { a: { id: "m_99", kind: "W" }, b: { id: "m_100", kind: "W" } };
+    if (ORIGIN_MAP[matchId]) { const [x, y] = ORIGIN_MAP[matchId]; return { a: { id: `m_${x}`, kind: "W" }, b: { id: `m_${y}`, kind: "W" } }; }
     if (n === 103) return { a: { id: "m_101", kind: "L" }, b: { id: "m_102", kind: "L" } };
     if (n === 104) return { a: { id: "m_101", kind: "W" }, b: { id: "m_102", kind: "W" } };
     return null;
@@ -1800,9 +1801,15 @@ function processKnockout(currentMatches) {
   const update = (id, fields) => { const idx = nextMatches.findIndex(x => x.id === id); if (idx > -1) nextMatches[idx] = { ...nextMatches[idx], ...fields }; };
 
   for(let i=0; i<16; i++) { update(`m_${73+i}`, { teamA: r32[i].tA, teamB: r32[i].tB }); }
-  for(let i=0; i<8; i++)  { update(`m_${89+i}`, { teamA: getW(`m_${73 + i*2}`) || `Vencedor J${73 + i*2}`, teamB: getW(`m_${74 + i*2}`) || `Vencedor J${74 + i*2}` }); }
-  for(let i=0; i<4; i++)  { update(`m_${97+i}`, { teamA: getW(`m_${89 + i*2}`) || `Vencedor J${89 + i*2}`, teamB: getW(`m_${90 + i*2}`) || `Vencedor J${90 + i*2}` }); }
-  for(let i=0; i<2; i++)  { update(`m_${101+i}`, { teamA: getW(`m_${97 + i*2}`) || `Vencedor J${97 + i*2}`, teamB: getW(`m_${98 + i*2}`) || `Vencedor J${98 + i*2}` }); }
+  // Oitavas (Round of 16) — mapeamento OFICIAL FIFA (não-sequencial)
+  const R16 = { m_89: [74, 77], m_90: [73, 75], m_91: [76, 78], m_92: [79, 80], m_93: [83, 84], m_94: [81, 82], m_95: [86, 88], m_96: [85, 87] };
+  Object.entries(R16).forEach(([id, [x, y]]) => update(id, { teamA: getW(`m_${x}`) || `Vencedor J${x}`, teamB: getW(`m_${y}`) || `Vencedor J${y}` }));
+  // Quartas — oficial
+  const QF = { m_97: [89, 90], m_98: [93, 94], m_99: [91, 92], m_100: [95, 96] };
+  Object.entries(QF).forEach(([id, [x, y]]) => update(id, { teamA: getW(`m_${x}`) || `Vencedor J${x}`, teamB: getW(`m_${y}`) || `Vencedor J${y}` }));
+  // Semis — oficial: m_101 = W97 v W98, m_102 = W99 v W100
+  update("m_101", { teamA: getW("m_97") || "Vencedor J97", teamB: getW("m_98") || "Vencedor J98" });
+  update("m_102", { teamA: getW("m_99") || "Vencedor J99", teamB: getW("m_100") || "Vencedor J100" });
   update("m_103", { teamA: getL("m_101") || "Perdedor J101", teamB: getL("m_102") || "Perdedor J102" });
   update("m_104", { teamA: getW("m_101") || "Vencedor J101", teamB: getW("m_102") || "Vencedor J102" });
 
