@@ -121,6 +121,16 @@ function calcPtsKnockout(pred, match) {
 // Decide se um jogo usa pontuação de mata-mata
 function isKnockoutMatch(match) { return match && MATA_MATA.includes(match.phase); }
 
+// Placar a EXIBIR: se houve prorrogação (etA/etB preenchidos), mostra o placar acumulado
+// da prorrogação; senão, o placar do tempo normal. Retorna { a, b, isET }.
+function displayScore(m) {
+  if (!m || !m.result) return null;
+  const r = m.result;
+  const hasET = r.etA != null && r.etA !== "" && r.etB != null && r.etB !== "";
+  if (hasET) return { a: parseInt(r.etA), b: parseInt(r.etB), isET: true };
+  return { a: r.a, b: r.b, isET: false };
+}
+
 // Pontuação unificada: grupos usa calcPts, mata-mata usa calcPtsKnockout
 function scoreMatch(pred, match) {
   if (!match || !match.result) return null;
@@ -500,7 +510,7 @@ function buildRoundPicksText(matches, participants, preds, dayLabel) {
   if (dayLabel) lines.push(`_${dayLabel}_`);
   lines.push("");
   matches.forEach((m) => {
-    const placar = m.result ? `  (${m.live ? "Parcial" : "Final"}: ${m.result.a}×${m.result.b})` : "";
+    const placar = m.result ? (() => { const ds = displayScore(m); return `  (${m.live ? "Parcial" : "Final"}: ${ds.a}×${ds.b}${ds.isET ? (m.result.pen ? " pênaltis" : " prorrog.") : ""})`; })() : "";
     if (!single) lines.push(`*${m.teamA} × ${m.teamB}*${placar}`);
     else if (placar) lines.push(`_${placar.trim()}_`);
     participants.forEach((p) => {
@@ -1218,7 +1228,7 @@ function LiveMatchesPanel({ matches, participants, preds }) {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
               <span style={{ flex: 1, textAlign: "right", fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamA}</span>
               {m.result
-                ? <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: C.red, letterSpacing: 1, padding: "0 8px", minWidth: 52, textAlign: "center" }}>{m.result.a} × {m.result.b}</span>
+                ? (() => { const ds = displayScore(m); return <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: C.red, letterSpacing: 1, padding: "0 8px", minWidth: 52, textAlign: "center", position: "relative" }}>{ds.a} × {ds.b}{ds.isET && <span style={{ position: "absolute", top: -6, right: -4, fontSize: 7, fontFamily: "system-ui", fontWeight: 900, background: C.gold, color: "#000", borderRadius: 3, padding: "1px 3px" }}>{m.result.pen ? "PEN" : "PROR"}</span>}</span>; })()
                 : <span style={{ fontSize: 12, color: C.muted, padding: "0 6px" }}>×</span>}
               <span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 14, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.teamB}</span>
             </div>
@@ -1498,17 +1508,23 @@ function TabChaveamento({ matches }) {
 
   const MatchCard = ({ m, isFinal }) => {
     const h2h = getGroupStageMeeting(m.teamA, m.teamB, matches);
-    const aWin = m.result && m.result.a > m.result.b;
-    const bWin = m.result && m.result.b > m.result.a;
+    const ds = displayScore(m);
+    // Vencedor considerando prorrogação e pênaltis
+    const adv = m.result ? resolveKO(m.result, m.teamA, m.teamB)?.advancer : null;
+    const aWin = m.result && (adv ? adv === m.teamA : m.result.a > m.result.b);
+    const bWin = m.result && (adv ? adv === m.teamB : m.result.b > m.result.a);
     const decided = m.result && !m.live;
     return (
       <div style={{ background: C.card, border: `1px solid ${m.live && m.result ? C.red + "66" : isFinal && m.result ? C.gold : C.border}`, borderRadius: 10, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2, minHeight: 12 }}>
           {m.date ? <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>{m.date}</div> : <span />}
-          {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
+          <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+            {ds && ds.isET && <span style={{ fontSize: 8, fontWeight: 900, color: "#000", background: C.gold, borderRadius: 3, padding: "1px 4px" }}>{m.result.pen ? "PÊNALTIS" : "PRORROG."}</span>}
+            {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
+          </div>
         </div>
-        <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} possible={allPossibleTeams(m.id, "a")} />
-        <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} possible={allPossibleTeams(m.id, "b")} />
+        <TeamRow name={m.teamA} score={ds ? ds.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} possible={allPossibleTeams(m.id, "a")} />
+        <TeamRow name={m.teamB} score={ds ? ds.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} possible={allPossibleTeams(m.id, "b")} />
         {h2h && isDefined(m.teamA) && isDefined(m.teamB) && (
           <div style={{ fontSize: 9, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 4, marginTop: 3 }}>
             🔁 Nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.result.a}×{h2h.result.b}</span>
@@ -1964,7 +1980,7 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
             <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>🔴 Parcial = tabela mexe ao vivo, mas não conta como oficial · ✓ Finalizar = resultado definitivo</div>
           </div>
         ) : (
-          <><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>{m.result ? <button onClick={() => isAdmin && startEdit(m)} style={{ background: m.live ? `${C.red}12` : `${C.green}12`, border: `1px solid ${m.live ? C.red : C.greenDim}`, borderRadius: 8, color: m.live ? C.red : C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20 }}>{m.result.a} × {m.result.b}</button> : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>}<span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></>
+          <><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span>{m.result ? (() => { const ds = displayScore(m); return <button onClick={() => isAdmin && startEdit(m)} style={{ background: m.live ? `${C.red}12` : `${C.green}12`, border: `1px solid ${m.live ? C.red : C.greenDim}`, borderRadius: 8, color: m.live ? C.red : C.green, cursor: isAdmin ? "pointer" : "default", padding: "5px 18px", fontFamily: "'Bebas Neue', cursive", fontSize: 20, position: "relative" }}>{ds.a} × {ds.b}{ds.isET && <span style={{ position: "absolute", top: -7, right: -7, fontSize: 8, fontFamily: "system-ui", fontWeight: 900, background: C.gold, color: "#000", borderRadius: 4, padding: "1px 3px" }}>{m.result.pen ? "PEN" : "PROR"}</span>}</button>; })() : <button onClick={() => isAdmin && startEdit(m)} style={GHOST_BTN({ padding: "6px 14px", visibility: isAdmin ? "visible" : "hidden" })}>+ Inserir Placar</button>}<span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></>
         )}
       </div>
     </div>
@@ -2342,7 +2358,7 @@ function TabVisao({ participants, matches, preds, isAdmin }) {
             {played.map((m) => (
               <tr key={m.id}>
                 <td style={{ position: "sticky", left: 0, zIndex: 1, padding: "10px 12px", color: C.text, fontWeight: 600, background: C.bg, borderBottom: `1px solid ${C.border}44` }}>{m.teamA} × {m.teamB}</td>
-                <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002", borderBottom: `1px solid ${C.border}44` }}>{m.result.a}×{m.result.b}</td>
+                <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002", borderBottom: `1px solid ${C.border}44` }}>{(() => { const ds = displayScore(m); return ds ? `${ds.a}×${ds.b}${ds.isET ? (m.result.pen ? " (pen)" : " (pr)") : ""}` : ""; })()}</td>
                 {ranked.map((p) => {
                   const pred = preds[p.id]?.[m.id];
                   const pts = scoreMatch(pred, m);
