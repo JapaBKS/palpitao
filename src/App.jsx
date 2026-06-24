@@ -1832,8 +1832,9 @@ function processKnockout(currentMatches) {
   
   // Helpers para puxar Vencedor (W) e Perdedor (L) dinamicamente
   const getM = (id) => nextMatches.find(m => m.id === id);
-  const getW = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamA : (m.result.b > m.result.a ? m.teamB : m.teamA)) : null; };
-  const getL = (id) => { const m = getM(id); return m && m.result ? (m.result.a > m.result.b ? m.teamB : (m.result.b > m.result.a ? m.teamA : m.teamB)) : null; };
+  // Quem avança: usa resolveKO pra considerar prorrogação e pênaltis (não só o placar normal)
+  const getW = (id) => { const m = getM(id); if (!m || !m.result) return null; const r = resolveKO(m.result, m.teamA, m.teamB); return r && r.advancer ? r.advancer : (m.result.a >= m.result.b ? m.teamA : m.teamB); };
+  const getL = (id) => { const m = getM(id); if (!m || !m.result) return null; const w = getW(id); return w === m.teamA ? m.teamB : m.teamA; };
 
   // 3. Garante que todos os 104 jogos existam na tela
   K_DEF.forEach(def => {
@@ -1952,6 +1953,9 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span><ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} autoFocus /><span style={{ color: C.muted }}>×</span><ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} /><span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></div>
             {MATA_MATA.includes(m.phase) && <KnockoutInputs pred={tempR} teamA={m.teamA} teamB={m.teamB} disabled={false} onChange={(fields) => setTempR((t) => ({ ...t, ...fields }))} />}
+            {MATA_MATA.includes(m.phase) && (parseInt(tempR.a) === parseInt(tempR.b)) && (tempR.a !== "" && tempR.b !== "") && (
+              <div style={{ fontSize: 10, color: C.muted, textAlign: "center", fontStyle: "italic" }}>Empate: preencha a prorrogação/pênaltis só quando o jogo realmente chegar nessa fase. Pra parcial ao vivo no 1º tempo, pode deixar em branco.</div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => !saving && saveResult(m.id, true)} style={BTN({ flex: 1, fontSize: 13, background: C.red, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : (m.result && !m.live ? "🔴 Voltar p/ Parcial" : "🔴 Salvar Parcial")}</button>
               <button onClick={() => { if (saving) return; if (window.confirm("Finalizar este resultado como OFICIAL?\n\nIsso passa a contar cravadas, bônus e resumo da rodada. Use só quando o jogo tiver acabado.")) saveResult(m.id, false); }} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "✓ Finalizar"}</button>
@@ -1977,7 +1981,7 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
               <button onClick={onExport} style={GHOST_BTN({ fontSize: 12, padding: "6px 12px", minHeight: 32 })}>💾 Backup (JSON)</button>
             </div>
           </div>
-          <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>Dica: Se um jogo de mata-mata empatar, declare o placar final com 1 gol a mais para quem venceu nos pênaltis para que o Motor Reativo empurre a seleção correta para a próxima fase.</div>
+          <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>Dica: Nos jogos de mata-mata, ao inserir um placar empatado aparecem as opções de prorrogação e pênaltis (igual ao palpite). Escolha quem marca na prorrogação ou quem passa nos pênaltis — o sistema empurra automaticamente a seleção correta para a próxima fase.</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 22px 1fr", gap: 8, alignItems: "center", marginBottom: 10 }}>
             <input value={teamA} onChange={(e) => setTeamA(e.target.value)} placeholder="Mandante" style={INP()} /><div style={{ textAlign: "center", color: C.muted, fontWeight: 900 }}>×</div><input value={teamB} onChange={(e) => setTeamB(e.target.value)} placeholder="Visitante" style={INP()} />
           </div>
