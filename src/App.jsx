@@ -1982,10 +1982,26 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
   const etDraw = isGol && hasETScore && parseInt(pred.etA) === parseInt(pred.etB);
   const showPen = isMantem || etDraw;
 
-  // Ao escolher "sai gol", já pré-preenche um placar de prorrogação editável (time A +1),
-  // diferente do normal — assim o estado sobrevive a recargas e os inputs aparecem na hora.
-  const onGol = () => { const na = String(parseInt(a) + 1); set({ etMode: "gol", etA: na, etB: String(b), pen: "" }); };
+  // Ao escolher "sai gol", entra no modo gol mas SEM placar ainda — o usuário escolhe quem marca.
+  const onGol = () => set({ etMode: "gol", etA: "", etB: "", pen: "" });
   const onMantem = () => set({ etMode: "mantem", etA: String(a), etB: String(b) });
+
+  // Quem marca na prorrogação (inferido do placar da prorrogação vs normal)
+  const na = parseInt(a), nb = parseInt(b);
+  const ea = hasETScore ? parseInt(pred.etA) : null, eb = hasETScore ? parseInt(pred.etB) : null;
+  const aScored = hasETScore && ea > na, bScored = hasETScore && eb > nb;
+  const whoMode = !hasETScore ? "" : (aScored && bScored ? "both" : aScored ? "A" : bScored ? "B" : "");
+  // Define quem marca: começa no mínimo válido (placar normal + 1 pro(s) time(s) que marca(m))
+  const pickWho = (who) => {
+    if (who === "A") set({ etMode: "gol", etA: String(na + 1), etB: String(nb), pen: "" });
+    else if (who === "B") set({ etMode: "gol", etA: String(na), etB: String(nb + 1), pen: "" });
+    else set({ etMode: "gol", etA: String(na + 1), etB: String(nb + 1), pen: "" }); // os dois
+  };
+  // Steppers: ajusta gols respeitando o mínimo (não pode ficar <= placar normal pra quem marca)
+  const stepA = (d) => { const v = Math.max(whoMode === "B" ? na : na + 1, (ea || na) + d); set({ etMode: "gol", etA: String(v) }); };
+  const stepB = (d) => { const v = Math.max(whoMode === "A" ? nb : nb + 1, (eb || nb) + d); set({ etMode: "gol", etB: String(v) }); };
+  const whoBtn = (active) => ({ flex: 1, padding: "9px 6px", borderRadius: 8, border: `1px solid ${active ? C.green : C.border}`, background: active ? `${C.green}1a` : C.surface, color: active ? C.green : C.muted, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", fontFamily: "inherit" });
+  const stepBtn = { width: 30, height: 30, borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontWeight: 900, fontSize: 16, cursor: disabled ? "default" : "pointer", fontFamily: "inherit", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" };
 
   return (
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1996,17 +2012,37 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
       </div>
 
       {isGol && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: C.muted }}>Placar final:</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamA)} {named ? teamA : "T1"}</span>
-          <ScoreIn value={pred.etA ?? ""} onChange={(v) => set({ etMode: "gol", etA: v })} disabled={disabled} />
-          <span style={{ color: C.muted }}>×</span>
-          <ScoreIn value={pred.etB ?? ""} onChange={(v) => set({ etMode: "gol", etB: v })} disabled={disabled} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamB)} {named ? teamB : "T2"}</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* Etapa 1: quem faz o gol na prorrogação? */}
+          <div style={{ fontSize: 11, color: C.muted, textAlign: "center" }}>Quem faz o gol na prorrogação?</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button disabled={disabled} onClick={() => pickWho("A")} style={whoBtn(whoMode === "A")}>{teamFlag(teamA)} {named ? teamA : "Time 1"}</button>
+            <button disabled={disabled} onClick={() => pickWho("both")} style={whoBtn(whoMode === "both")}>Os dois</button>
+            <button disabled={disabled} onClick={() => pickWho("B")} style={whoBtn(whoMode === "B")}>{teamFlag(teamB)} {named ? teamB : "Time 2"}</button>
+          </div>
+
+          {/* Etapa 2: ajusta o placar com steppers (só aparece depois de escolher quem marca) */}
+          {whoMode && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: C.surface, borderRadius: 8, padding: "8px 6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamA)} {named ? teamA : "T1"}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <button disabled={disabled || whoMode === "B"} onClick={() => stepA(-1)} style={{ ...stepBtn, opacity: whoMode === "B" ? 0.3 : 1 }}>−</button>
+                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, minWidth: 22, textAlign: "center", color: C.green }}>{ea ?? na}</span>
+                <button disabled={disabled || whoMode === "B"} onClick={() => stepA(1)} style={{ ...stepBtn, opacity: whoMode === "B" ? 0.3 : 1 }}>+</button>
+              </div>
+              <span style={{ color: C.muted, fontWeight: 900 }}>×</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <button disabled={disabled || whoMode === "A"} onClick={() => stepB(-1)} style={{ ...stepBtn, opacity: whoMode === "A" ? 0.3 : 1 }}>−</button>
+                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, minWidth: 22, textAlign: "center", color: C.green }}>{eb ?? nb}</span>
+                <button disabled={disabled || whoMode === "A"} onClick={() => stepB(1)} style={{ ...stepBtn, opacity: whoMode === "A" ? 0.3 : 1 }}>+</button>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, color: C.text, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamB)} {named ? teamB : "T2"}</span>
+            </div>
+          )}
+          {whoMode === "both" && etDraw && (
+            <div style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>Empate na prorrogação → decide nos pênaltis 👇</div>
+          )}
         </div>
-      )}
-      {isGol && sameAsNormal && (
-        <div style={{ fontSize: 10, color: C.red, textAlign: "center" }}>⚠️ O placar da prorrogação não pode ser igual ao do tempo normal. Mude o placar ou use "Mantém".</div>
       )}
 
       {showPen && (
