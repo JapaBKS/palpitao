@@ -2097,9 +2097,14 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
                 <span style={{ fontSize: 11, fontWeight: 700, color: C.text, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamB)} {named ? teamB : "T2"}</span>
               </div>
               {dirty ? (
-                <button disabled={disabled} onClick={confirmET} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "none", background: C.green, color: "#06090a", fontWeight: 900, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>✓ Confirmar placar {curEa}×{curEb}</button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <button disabled={disabled} onClick={confirmET} style={{ width: "100%", padding: "12px", borderRadius: 8, border: "none", background: C.green, color: "#06090a", fontWeight: 900, fontSize: 14, cursor: "pointer", fontFamily: "inherit", animation: "confirmPulse 1.4s ease-in-out infinite", boxShadow: `0 0 0 0 ${C.green}` }}>✓ CONFIRMAR PLACAR {curEa}×{curEb}</button>
+                  <div style={{ fontSize: 10.5, color: C.gold, textAlign: "center", fontWeight: 700 }}>
+                    ⚠️ Toque em CONFIRMAR para salvar — sem isso o placar da prorrogação não conta{curEa === curEb ? " e os pênaltis não abrem" : ""}.
+                  </div>
+                </div>
               ) : (
-                <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>{curEa === curEb ? "Empate na prorrogação → decide nos pênaltis 👇" : `Placar confirmado: ${curEa}×${curEb}`}</div>
+                <div style={{ fontSize: 11, color: curEa === curEb ? C.gold : C.green, textAlign: "center", fontWeight: 700 }}>{curEa === curEb ? "✓ Placar " + curEa + "×" + curEb + " salvo → agora escolha quem passa nos pênaltis 👇" : "✓ Placar confirmado: " + curEa + "×" + curEb}</div>
               )}
             </>
           )}
@@ -2113,6 +2118,13 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
             <button disabled={disabled} onClick={() => set({ pen: "A" })} style={btn(pred.pen === "A")}>{teamFlag(teamA)} {named ? teamA : "Time 1"}</button>
             <button disabled={disabled} onClick={() => set({ pen: "B" })} style={btn(pred.pen === "B")}>{teamFlag(teamB)} {named ? teamB : "Time 2"}</button>
           </div>
+        </div>
+      )}
+      {/* Empate na prorrogação ainda não confirmado: explica que os pênaltis abrem após confirmar */}
+      {isGol && dirty && curWho && curEa === curEb && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, opacity: 0.55 }}>
+          <div style={{ fontSize: 11, color: C.muted, fontWeight: 700, textAlign: "center" }}>🎯 Quem passa nos pênaltis?</div>
+          <div style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>🔒 Confirme o placar acima para liberar a escolha dos pênaltis</div>
         </div>
       )}
     </div>
@@ -2602,6 +2614,7 @@ export default function BolaoApp() {
         @keyframes badgePop { 0% { transform: scale(0.3) rotate(-10deg); opacity: 0; } 65% { transform: scale(1.18) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes livePulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+        @keyframes confirmPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(74,222,128,0.5); } 50% { box-shadow: 0 0 0 6px rgba(74,222,128,0); } }
         @keyframes badgeGlow { 0%,100% { box-shadow: 0 0 0px transparent; } 50% { box-shadow: 0 0 16px #ffca2866, 0 0 6px #ffca2844; } }
         .row-hover:hover { background: ${C.surface} !important; cursor: pointer; }
         .card-hover:hover { border-color: ${C.border} !important; }
