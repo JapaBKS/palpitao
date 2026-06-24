@@ -1972,37 +1972,40 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
 
   if (!isDraw) return null; // só mostra etapas extras se o tempo normal for empate
 
-  // etMode controla o ramo: "mantem" (vai pênaltis) ou "gol" (placar da prorrogação). 
-  // Se não definido ainda, inferimos do estado salvo (compatível com palpites antigos).
+  // O ramo é inferido da ESTRUTURA salva (sobrevive a recargas do servidor):
+  // etMode pode estar salvo; senão, infere de etA/etB. "mantem" = prorrogação == normal.
   const hasETScore = pred.etA != null && pred.etA !== "" && pred.etB != null && pred.etB !== "";
-  const inferredMantem = hasETScore && String(pred.etA) === String(pred.a) && String(pred.etB) === String(pred.b);
-  const mode = pred.etMode || (hasETScore ? (inferredMantem ? "mantem" : "gol") : "");
+  const sameAsNormal = hasETScore && String(pred.etA) === String(pred.a) && String(pred.etB) === String(pred.b);
+  const mode = pred.etMode || (hasETScore ? (sameAsNormal ? "mantem" : "gol") : "");
   const isMantem = mode === "mantem";
   const isGol = mode === "gol";
   const etDraw = isGol && hasETScore && parseInt(pred.etA) === parseInt(pred.etB);
-  const etSameAsNormal = isGol && hasETScore && String(pred.etA) === String(pred.a) && String(pred.etB) === String(pred.b);
-  // Pênaltis aparecem se: mantém, OU saiu gol mas o placar da prorrogação empatou
   const showPen = isMantem || etDraw;
+
+  // Ao escolher "sai gol", já pré-preenche um placar de prorrogação editável (time A +1),
+  // diferente do normal — assim o estado sobrevive a recargas e os inputs aparecem na hora.
+  const onGol = () => { const na = String(parseInt(a) + 1); set({ etMode: "gol", etA: na, etB: String(b), pen: "" }); };
+  const onMantem = () => set({ etMode: "mantem", etA: String(a), etB: String(b) });
 
   return (
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ fontSize: 11, color: C.gold, fontWeight: 700 }}>⏱️ Empatou! E na prorrogação?</div>
       <div style={{ display: "flex", gap: 6 }}>
-        <button disabled={disabled} onClick={() => set({ etMode: "mantem", etA: a, etB: b })} style={btn(isMantem)}>Mantém {a}×{b} → pênaltis</button>
-        <button disabled={disabled} onClick={() => set({ etMode: "gol", etA: "", etB: "", pen: "" })} style={btn(isGol)}>Sai gol na prorrogação</button>
+        <button disabled={disabled} onClick={onMantem} style={btn(isMantem)}>Mantém {a}×{b} → pênaltis</button>
+        <button disabled={disabled} onClick={onGol} style={btn(isGol)}>Sai gol na prorrogação</button>
       </div>
 
       {isGol && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 11, color: C.muted }}>Placar final:</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamA)} {named ? teamA : "T1"}</span>
-          <ScoreIn value={pred.etA ?? ""} onChange={(v) => set({ etA: v })} disabled={disabled} />
+          <ScoreIn value={pred.etA ?? ""} onChange={(v) => set({ etMode: "gol", etA: v })} disabled={disabled} />
           <span style={{ color: C.muted }}>×</span>
-          <ScoreIn value={pred.etB ?? ""} onChange={(v) => set({ etB: v })} disabled={disabled} />
+          <ScoreIn value={pred.etB ?? ""} onChange={(v) => set({ etMode: "gol", etB: v })} disabled={disabled} />
           <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamB)} {named ? teamB : "T2"}</span>
         </div>
       )}
-      {etSameAsNormal && (
+      {isGol && sameAsNormal && (
         <div style={{ fontSize: 10, color: C.red, textAlign: "center" }}>⚠️ O placar da prorrogação não pode ser igual ao do tempo normal. Mude o placar ou use "Mantém".</div>
       )}
 
@@ -2253,6 +2256,10 @@ export default function BolaoApp() {
   const [lastSync, setLastSync] = useState(null);
   const stateRef = useRef({ matches: [], participants: [], preds: {} });
   useEffect(() => { stateRef.current = { matches, participants, preds }; });
+  // Protege palpites em edição: guarda o timestamp da última edição local por (pid:matchId).
+  // Enquanto "fresca" (< 60s), a edição local não é sobrescrita pelo refreshData.
+  const localEditsRef = useRef({});
+  const markLocalEdit = (pid, matchId) => { localEditsRef.current[`${pid}:${matchId}`] = Date.now(); };
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
   useEffect(() => { setupPWA(); }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [tab]);
@@ -2272,6 +2279,16 @@ export default function BolaoApp() {
       if (dbPalpites) {
         const objPreds = {};
         dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
+        // Preserva edições locais "frescas" (< 60s) que ainda podem não ter ido ao banco,
+        // evitando que o polling apague o palpite que o usuário está preenchendo agora.
+        const now = Date.now();
+        const localPreds = stateRef.current.preds || {};
+        Object.keys(localEditsRef.current).forEach(key => {
+          if (now - localEditsRef.current[key] > 60000) { delete localEditsRef.current[key]; return; }
+          const [pid, matchId] = key.split(":");
+          const localVal = localPreds[pid]?.[matchId];
+          if (localVal) { if (!objPreds[pid]) objPreds[pid] = {}; objPreds[pid][matchId] = localVal; }
+        });
         setPreds(objPreds);
       }
       setLastSync(new Date());
@@ -2383,7 +2400,17 @@ export default function BolaoApp() {
 
   const spr = async (d) => {
     const toSave = [];
-    Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => { const p = d[participante_id][jogo_id]; if (p.a === "" || p.b === "" || p.a == null || p.b == null) return; const old = preds[participante_id]?.[jogo_id]; const changed = !old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b) || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? ""); if (changed) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null }); }); });
+    Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => {
+      const p = d[participante_id][jogo_id];
+      const old = preds[participante_id]?.[jogo_id];
+      // marca qualquer mudança de campo como edição local fresca (protege do polling),
+      // mesmo que o palpite ainda esteja incompleto (ex: prorrogação sendo preenchida).
+      const anyChange = !old || String(old.a ?? "") !== String(p.a ?? "") || String(old.b ?? "") !== String(p.b ?? "") || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "") || String(old.etMode ?? "") !== String(p.etMode ?? "");
+      if (anyChange) markLocalEdit(participante_id, jogo_id);
+      if (p.a === "" || p.b === "" || p.a == null || p.b == null) return;
+      const changed = !old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b) || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "");
+      if (changed) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null });
+    }); });
     setPreds(d);
     if (toSave.length === 0) return;
     let { error } = await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
