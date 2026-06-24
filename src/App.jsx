@@ -1430,22 +1430,58 @@ function TabChaveamento({ matches }) {
     return { teams, kind: o.kind, srcNum };
   };
 
+  // Coleta TODOS os times que ainda podem chegar a um slot, recuando a árvore até a base.
+  // Ex: lado A da final → recua semi → quartas → oitavas → 32-avos, juntando os times definidos.
+  const allPossibleTeams = (matchId, side) => {
+    const collect = (gameId, kind, acc, depth) => {
+      const src = byId(gameId);
+      if (!src || depth > 6) return;
+      // Se este jogo já tem um vencedor/perdedor decidido, o caminho colapsa pra esse time só
+      if (src.result && !src.live) {
+        const aWin = src.result.a > src.result.b, bWin = src.result.b > src.result.a;
+        const advancer = kind === "L" ? (aWin ? src.teamB : src.teamA) : (aWin ? src.teamA : bWin ? src.teamB : null);
+        if (advancer && isDefined(advancer)) { acc.add(advancer); return; }
+      }
+      // Senão, olha os dois lados: se definido, é um candidato; se não, recua mais
+      [src.teamA, src.teamB].forEach((t, i) => {
+        if (isDefined(t)) { acc.add(t); return; }
+        const o = originOf(gameId);
+        if (o) { const branch = i === 0 ? o.a : o.b; collect(branch.id, branch.kind, acc, depth + 1); }
+      });
+    };
+    const orig = originOf(matchId);
+    if (!orig) return null;
+    const o = side === "a" ? orig.a : orig.b;
+    const acc = new Set();
+    collect(o.id, o.kind, acc, 0);
+    const srcNum = o.id.replace("m_", "");
+    return { teams: [...acc], kind: o.kind, srcNum };
+  };
+
   const TeamRow = ({ name, score, win, lose, live, possible }) => {
     const defined = isDefined(name);
-    // Slot ainda não definido: mostra de onde vem (nº do jogo) e os possíveis, se já dá pra saber
+    // Slot ainda não definido: mostra de onde vem (nº do jogo) e TODOS os times que podem chegar
     if (!defined && possible) {
       const verbo = possible.kind === "L" ? "Perdedor" : "Vencedor";
+      const teams = possible.teams || [];
       return (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 900, color: C.gold, flexShrink: 0, background: `${C.gold}1a`, borderRadius: 5, padding: "2px 6px" }}>J{possible.srcNum}</span>
-          {possible.teams ? (
-            <span style={{ fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[0])} {possible.teams[0]}</span>
-              <span style={{ color: C.muted, fontWeight: 400 }}> ou </span>
-              <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[1])} {possible.teams[1]}</span>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "6px 8px", borderRadius: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 900, color: C.gold, flexShrink: 0, background: `${C.gold}1a`, borderRadius: 5, padding: "2px 6px", marginTop: 1 }}>J{possible.srcNum}</span>
+          {teams.length > 0 ? (
+            <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+              {teams.length === 1 ? (
+                <span style={{ fontWeight: 700 }}>{teamFlag(teams[0])} {teams[0]}</span>
+              ) : teams.length <= 4 ? (
+                teams.map((t, i) => <span key={t}>{i > 0 && <span style={{ color: C.muted, fontWeight: 400 }}> ou </span>}<span style={{ fontWeight: 700 }}>{teamFlag(t)} {t}</span></span>)
+              ) : (
+                <span title={teams.join(", ")}>
+                  <span style={{ color: C.muted }}>{teams.length} times possíveis: </span>
+                  {teams.map(t => teamFlag(t) || "⚽").join(" ")}
+                </span>
+              )}
             </span>
           ) : (
-            <span style={{ fontSize: 12, color: C.muted, fontStyle: "italic", whiteSpace: "nowrap" }}>{verbo} do J{possible.srcNum}</span>
+            <span style={{ fontSize: 12, color: C.muted, fontStyle: "italic" }}>{verbo} do J{possible.srcNum}</span>
           )}
         </div>
       );
@@ -1471,8 +1507,8 @@ function TabChaveamento({ matches }) {
           {m.date ? <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>{m.date}</div> : <span />}
           {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
         </div>
-        <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} possible={possibleFor(m.id, "a")} />
-        <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} possible={possibleFor(m.id, "b")} />
+        <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} possible={allPossibleTeams(m.id, "a")} />
+        <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} possible={allPossibleTeams(m.id, "b")} />
         {h2h && isDefined(m.teamA) && isDefined(m.teamB) && (
           <div style={{ fontSize: 9, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 4, marginTop: 3 }}>
             🔁 Nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.result.a}×{h2h.result.b}</span>
