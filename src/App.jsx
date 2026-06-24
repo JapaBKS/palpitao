@@ -2086,6 +2086,12 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
     const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { ...(preds[activePid]?.[matchId] || {}), ...fields } } };
     onChange(next); onSaved();
   };
+  // Limpa completamente o palpite de um jogo (placar + prorrogação + pênalti) → deleta no servidor
+  const clearPred = (matchId) => {
+    if (!activePid) return;
+    const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { a: "", b: "", etA: "", etB: "", pen: "", etMode: "" } } };
+    onChange(next); onSaved();
+  };
 
   const handleUnlock = () => {
     if (!activeUser.pin) { if (pinInput.length < 4) return alert("A senha deve ter no mínimo 4 caracteres!"); savePin(activeUser.id, pinInput); setSessionUnlocked({ ...sessionUnlocked, [activeUser.id]: true }); } else { if (activeUser.pin === pinInput) setSessionUnlocked({ ...sessionUnlocked, [activeUser.id]: true }); else alert("Senha de acesso incorreta!"); }
@@ -2144,6 +2150,9 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                       <span style={{ color: C.muted, fontSize: 12 }}>×</span>
                       <ScoreIn value={pred.b ?? ""} onChange={(v) => setPred(m.id, "b", v)} disabled={locked} />
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamB}</span>
+                      {!locked && (pred.a !== "" && pred.a != null || pred.b !== "" && pred.b != null) && (
+                        <button onClick={() => clearPred(m.id)} title="Limpar palpite deste jogo" aria-label="Limpar palpite" style={{ background: "transparent", border: `1px solid ${C.red}55`, color: C.red, borderRadius: 6, width: 28, height: 28, cursor: "pointer", fontSize: 13, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>✕</button>
+                      )}
                       <PtsBadge pts={pts} />
                     </div>
                     {isKnockoutMatch(m) && <KnockoutInputs pred={pred} teamA={m.teamA} teamB={m.teamB} disabled={locked} onChange={(fields) => setPredFields(m.id, fields)} />}
@@ -2447,6 +2456,7 @@ export default function BolaoApp() {
 
   const spr = async (d) => {
     const toSave = [];
+    const toDelete = [];
     Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => {
       const p = d[participante_id][jogo_id];
       const old = preds[participante_id]?.[jogo_id];
@@ -2454,11 +2464,22 @@ export default function BolaoApp() {
       // mesmo que o palpite ainda esteja incompleto (ex: prorrogação sendo preenchida).
       const anyChange = !old || String(old.a ?? "") !== String(p.a ?? "") || String(old.b ?? "") !== String(p.b ?? "") || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "") || String(old.etMode ?? "") !== String(p.etMode ?? "");
       if (anyChange) markLocalEdit(participante_id, jogo_id);
-      if (p.a === "" || p.b === "" || p.a == null || p.b == null) return;
+      const isEmpty = p.a === "" || p.b === "" || p.a == null || p.b == null;
+      if (isEmpty) {
+        // Palpite apagado: se havia algo salvo no banco, marca p/ deletar
+        const wasSaved = old && old.a != null && old.a !== "" && old.b != null && old.b !== "";
+        if (wasSaved) toDelete.push({ participante_id, jogo_id });
+        return;
+      }
       const changed = !old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b) || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "");
       if (changed) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null });
     }); });
     setPreds(d);
+    // Deleta palpites apagados
+    for (const del of toDelete) {
+      const { error } = await supabase.from('palpites').delete().eq('participante_id', del.participante_id).eq('jogo_id', del.jogo_id);
+      if (error) showToast("❌ Não foi possível apagar o palpite no servidor.", "error");
+    }
     if (toSave.length === 0) return;
     let { error } = await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
     if (error && /palpite_et|palpite_pen/.test(error.message || "")) {
