@@ -63,16 +63,83 @@ function calcPts(pred, result) {
   return 0;
 }
 
+// Multiplicador de fase do mata-mata (incide sobre TUDO: placar + bônus)
+const PHASE_MULT = { "32-avos de Final": 1, "Oitavas de Final": 1.2, "Quartas de Final": 1.5, "Semifinal": 1.8, "3º Lugar": 1.5, "Final": 2 };
+const KO_BONUS = { classif: 5, prorrog: 3, placarProrrog: 5, penalti: 3 };
+
+// Quem se classifica num placar (empate → null; precisa de quem decide depois)
+function whoAdvances(a, b, teamA, teamB) {
+  if (a > b) return teamA; if (b > a) return teamB; return null;
+}
+
+// Resolve o "estado final" de um jogo (palpite OU resultado), seguindo a árvore:
+// normal → (empate) prorrogação → (empate) pênaltis.
+// Estrutura esperada: { a, b, etA, etB (prorrogação, opcional), pen ('A'|'B', opcional) }
+// Retorna { finalA, finalB, hadET (bool), hadPK (bool), advancer (teamA|teamB|null) }
+function resolveKO(obj, teamA, teamB) {
+  if (!obj || obj.a == null || obj.b === "" || obj.a === "" || obj.b == null) return null;
+  const a = parseInt(obj.a), b = parseInt(obj.b);
+  if (isNaN(a) || isNaN(b)) return null;
+  if (a !== b) return { finalA: a, finalB: b, hadET: false, hadPK: false, advancer: whoAdvances(a, b, teamA, teamB) };
+  // empate no normal → prorrogação
+  const hasET = obj.etA != null && obj.etB != null && obj.etA !== "" && obj.etB !== "";
+  if (hasET) {
+    const ea = parseInt(obj.etA), eb = parseInt(obj.etB);
+    if (!isNaN(ea) && !isNaN(eb) && ea !== eb) return { finalA: ea, finalB: eb, hadET: true, hadPK: false, advancer: whoAdvances(ea, eb, teamA, teamB) };
+    // prorrogação empate → pênaltis
+    const adv = obj.pen === "A" ? teamA : obj.pen === "B" ? teamB : null;
+    return { finalA: !isNaN(ea) ? ea : a, finalB: !isNaN(eb) ? eb : b, hadET: true, hadPK: true, advancer: adv };
+  }
+  // empatou no normal mas sem prorrogação informada → mantém placar, vai pros pênaltis
+  const adv = obj.pen === "A" ? teamA : obj.pen === "B" ? teamB : null;
+  return { finalA: a, finalB: b, hadET: true, hadPK: true, advancer: adv };
+}
+
+// Pontuação de um jogo do mata-mata (já multiplicada pela fase)
+function calcPtsKnockout(pred, match) {
+  if (!match || !match.result) return null;
+  const teamA = match.teamA, teamB = match.teamB;
+  const R = resolveKO(match.result, teamA, teamB);
+  const P = resolveKO(pred, teamA, teamB);
+  if (!R || !P) return null;
+  let pts = 0;
+  // 1. Placar final (mesma régua do calcPts, sobre o placar que decidiu)
+  const base = calcPts({ a: P.finalA, b: P.finalB }, { a: R.finalA, b: R.finalB });
+  if (base != null) pts += base;
+  // 2. Classificado (+5)
+  if (R.advancer && P.advancer === R.advancer) pts += KO_BONUS.classif;
+  // 3. Foi pra prorrogação (+3)
+  if (P.hadET === R.hadET) pts += KO_BONUS.prorrog;
+  // 4. Placar da prorrogação (+5) — só se de fato houve prorrogação e o palpite previu ET com placar exato
+  if (R.hadET && P.hadET && P.finalA === R.finalA && P.finalB === R.finalB) pts += KO_BONUS.placarProrrog;
+  // 5. Pênaltis: quem passa (+3)
+  if (R.hadPK && P.hadPK && R.advancer && P.advancer === R.advancer) pts += KO_BONUS.penalti;
+  const mult = PHASE_MULT[match.phase] || 1;
+  return Math.round(pts * mult);
+}
+
+// Decide se um jogo usa pontuação de mata-mata
+function isKnockoutMatch(match) { return match && MATA_MATA.includes(match.phase); }
+
+// Pontuação unificada: grupos usa calcPts, mata-mata usa calcPtsKnockout
+function scoreMatch(pred, match) {
+  if (!match || !match.result) return null;
+  if (isKnockoutMatch(match)) return calcPtsKnockout(pred, match);
+  return calcPts(pred, match.result);
+}
+
 function getStats(pid, matches, preds) {
   let total = 0, c10 = 0, c7 = 0, c5 = 0, c2 = 0, c0 = 0;
   for (const m of matches) {
     if (!m.result) continue;
     const p = preds[pid]?.[m.id];
     if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) continue;
-    const pts = calcPts(p, m.result);
+    const pts = scoreMatch(p, m);
     if (pts == null) continue;
     total += pts;
-    if (pts === 10) c10++; else if (pts === 7) c7++; else if (pts === 5) c5++; else if (pts === 2) c2++; else c0++;
+    // Categoria de cravada baseada no PLACAR (não no total multiplicado do mata-mata)
+    const placarPts = isKnockoutMatch(m) ? calcPts({ a: resolveKO(p, m.teamA, m.teamB)?.finalA, b: resolveKO(p, m.teamA, m.teamB)?.finalB }, { a: resolveKO(m.result, m.teamA, m.teamB)?.finalA, b: resolveKO(m.result, m.teamA, m.teamB)?.finalB }) : pts;
+    if (placarPts === 10) c10++; else if (placarPts === 7) c7++; else if (placarPts === 5) c5++; else if (placarPts === 2) c2++; else c0++;
   }
   return { total, c10, c7, c5, c2, c0 };
 }
@@ -85,7 +152,7 @@ function getDetailedStats(pid, matches, preds) {
     const m = played[i];
     const p = preds[pid]?.[m.id];
     if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) { if (!streakDone) streakDone = true; continue; }
-    const pts = calcPts(p, m.result);
+    const pts = scoreMatch(p, m);
     if (pts == null) { if (!streakDone) streakDone = true; continue; }
     if (!streakDone) { if (pts > 0) streak++; else streakDone = true; }
     if (pts > bestPts) { bestPts = pts; bestMatch = m; }
@@ -105,7 +172,7 @@ function getDetailedStats(pid, matches, preds) {
   for (const m of sortedPlayed) {
     const p = preds[pid]?.[m.id];
     if (!p || p.a === "" || p.b === "" || p.a == null || p.b == null) { currAny = 0; currExact = 0; continue; }
-    const pts = calcPts(p, m.result);
+    const pts = isKnockoutMatch(m) ? calcPts({a:resolveKO(p,m.teamA,m.teamB)?.finalA,b:resolveKO(p,m.teamA,m.teamB)?.finalB},{a:resolveKO(m.result,m.teamA,m.teamB)?.finalA,b:resolveKO(m.result,m.teamA,m.teamB)?.finalB}) : calcPts(p, m.result);
     if (pts == null) { currAny = 0; currExact = 0; continue; }
     if (pts > 0) { currAny++; if (currAny > maxStreak) maxStreak = currAny; } else currAny = 0;
     if (pts === 10) { currExact++; if (currExact > maxExactStreak) maxExactStreak = currExact; } else currExact = 0;
@@ -236,6 +303,11 @@ const ALL_TEAMS = Object.values(GRUPOS).flat().sort((a, b) => a.localeCompare(b,
 const TEAM_TO_GROUP = {};
 Object.entries(GRUPOS).forEach(([letter, teams]) => { teams.forEach(team => { TEAM_TO_GROUP[team.toLowerCase()] = letter; }); });
 
+// ── Alocação oficial dos 8 melhores terceiros (Anexo C FIFA, 495 combinações) ──
+// Chave = 8 grupos que classificam terceiros (ordenados A-L). Valor = grupo do 3º p/ slots [1A,1B,1D,1E,1G,1I,1K,1L].
+const THIRD_ALLOC = {"EFGHIJKL":"EJIFHGLK","DFGHIJKL":"HGIDJFLK","DEGHIJKL":"EJIDHGLK","DEFHIJKL":"EJIDHFLK","DEFGIJKL":"EGIDJFLK","DEFGHJKL":"EGJDHFLK","DEFGHIKL":"EGIDHFLK","DEFGHIJL":"EGJDHFLI","DEFGHIJK":"EGJDHFIK","CFGHIJKL":"HGICJFLK","CEGHIJKL":"EJICHGLK","CEFHIJKL":"EJICHFLK","CEFGIJKL":"EGICJFLK","CEFGHJKL":"EGJCHFLK","CEFGHIKL":"EGICHFLK","CEFGHIJL":"EGJCHFLI","CEFGHIJK":"EGJCHFIK","CDGHIJKL":"HGICJDLK","CDFHIJKL":"CJIDHFLK","CDFGIJKL":"CGIDJFLK","CDFGHJKL":"CGJDHFLK","CDFGHIKL":"CGIDHFLK","CDFGHIJL":"CGJDHFLI","CDFGHIJK":"CGJDHFIK","CDEHIJKL":"EJICHDLK","CDEGIJKL":"EGICJDLK","CDEGHJKL":"EGJCHDLK","CDEGHIKL":"EGICHDLK","CDEGHIJL":"EGJCHDLI","CDEGHIJK":"EGJCHDIK","CDEFIJKL":"CJEDIFLK","CDEFHJKL":"CJEDHFLK","CDEFHIKL":"CEIDHFLK","CDEFHIJL":"CJEDHFLI","CDEFHIJK":"CJEDHFIK","CDEFGJKL":"CGEDJFLK","CDEFGIKL":"CGEDIFLK","CDEFGIJL":"CGEDJFLI","CDEFGIJK":"CGEDJFIK","CDEFGHKL":"CGEDHFLK","CDEFGHJL":"CGJDHFLE","CDEFGHJK":"CGJDHFEK","CDEFGHIL":"CGEDHFLI","CDEFGHIK":"CGEDHFIK","CDEFGHIJ":"CGJDHFEI","BFGHIJKL":"HJBFIGLK","BEGHIJKL":"EJIBHGLK","BEFHIJKL":"EJBFIHLK","BEFGIJKL":"EJBFIGLK","BEFGHJKL":"EJBFHGLK","BEFGHIKL":"EGBFIHLK","BEFGHIJL":"EJBFHGLI","BEFGHIJK":"EJBFHGIK","BDGHIJKL":"HJBDIGLK","BDFHIJKL":"HJBDIFLK","BDFGIJKL":"IGBDJFLK","BDFGHJKL":"HGBDJFLK","BDFGHIKL":"HGBDIFLK","BDFGHIJL":"HGBDJFLI","BDFGHIJK":"HGBDJFIK","BDEHIJKL":"EJBDIHLK","BDEGIJKL":"EJBDIGLK","BDEGHJKL":"EJBDHGLK","BDEGHIKL":"EGBDIHLK","BDEGHIJL":"EJBDHGLI","BDEGHIJK":"EJBDHGIK","BDEFIJKL":"EJBDIFLK","BDEFHJKL":"EJBDHFLK","BDEFHIKL":"EIBDHFLK","BDEFHIJL":"EJBDHFLI","BDEFHIJK":"EJBDHFIK","BDEFGJKL":"EGBDJFLK","BDEFGIKL":"EGBDIFLK","BDEFGIJL":"EGBDJFLI","BDEFGIJK":"EGBDJFIK","BDEFGHKL":"EGBDHFLK","BDEFGHJL":"HGBDJFLE","BDEFGHJK":"HGBDJFEK","BDEFGHIL":"EGBDHFLI","BDEFGHIK":"EGBDHFIK","BDEFGHIJ":"HGBDJFEI","BCGHIJKL":"HJBCIGLK","BCFHIJKL":"HJBCIFLK","BCFGIJKL":"IGBCJFLK","BCFGHJKL":"HGBCJFLK","BCFGHIKL":"HGBCIFLK","BCFGHIJL":"HGBCJFLI","BCFGHIJK":"HGBCJFIK","BCEHIJKL":"EJBCIHLK","BCEGIJKL":"EJBCIGLK","BCEGHJKL":"EJBCHGLK","BCEGHIKL":"EGBCIHLK","BCEGHIJL":"EJBCHGLI","BCEGHIJK":"EJBCHGIK","BCEFIJKL":"EJBCIFLK","BCEFHJKL":"EJBCHFLK","BCEFHIKL":"EIBCHFLK","BCEFHIJL":"EJBCHFLI","BCEFHIJK":"EJBCHFIK","BCEFGJKL":"EGBCJFLK","BCEFGIKL":"EGBCIFLK","BCEFGIJL":"EGBCJFLI","BCEFGIJK":"EGBCJFIK","BCEFGHKL":"EGBCHFLK","BCEFGHJL":"HGBCJFLE","BCEFGHJK":"HGBCJFEK","BCEFGHIL":"EGBCHFLI","BCEFGHIK":"EGBCHFIK","BCEFGHIJ":"HGBCJFEI","BCDHIJKL":"HJBCIDLK","BCDGIJKL":"IGBCJDLK","BCDGHJKL":"HGBCJDLK","BCDGHIKL":"HGBCIDLK","BCDGHIJL":"HGBCJDLI","BCDGHIJK":"HGBCJDIK","BCDFIJKL":"CJBDIFLK","BCDFHJKL":"CJBDHFLK","BCDFHIKL":"CIBDHFLK","BCDFHIJL":"CJBDHFLI","BCDFHIJK":"CJBDHFIK","BCDFGJKL":"CGBDJFLK","BCDFGIKL":"CGBDIFLK","BCDFGIJL":"CGBDJFLI","BCDFGIJK":"CGBDJFIK","BCDFGHKL":"CGBDHFLK","BCDFGHJL":"CGBDHFLJ","BCDFGHJK":"HGBCJFDK","BCDFGHIL":"CGBDHFLI","BCDFGHIK":"CGBDHFIK","BCDFGHIJ":"HGBCJFDI","BCDEIJKL":"EJBCIDLK","BCDEHJKL":"EJBCHDLK","BCDEHIKL":"EIBCHDLK","BCDEHIJL":"EJBCHDLI","BCDEHIJK":"EJBCHDIK","BCDEGJKL":"EGBCJDLK","BCDEGIKL":"EGBCIDLK","BCDEGIJL":"EGBCJDLI","BCDEGIJK":"EGBCJDIK","BCDEGHKL":"EGBCHDLK","BCDEGHJL":"HGBCJDLE","BCDEGHJK":"HGBCJDEK","BCDEGHIL":"EGBCHDLI","BCDEGHIK":"EGBCHDIK","BCDEGHIJ":"HGBCJDEI","BCDEFJKL":"CJBDEFLK","BCDEFIKL":"CEBDIFLK","BCDEFIJL":"CJBDEFLI","BCDEFIJK":"CJBDEFIK","BCDEFHKL":"CEBDHFLK","BCDEFHJL":"CJBDHFLE","BCDEFHJK":"CJBDHFEK","BCDEFHIL":"CEBDHFLI","BCDEFHIK":"CEBDHFIK","BCDEFHIJ":"CJBDHFEI","BCDEFGKL":"CGBDEFLK","BCDEFGJL":"CGBDJFLE","BCDEFGJK":"CGBDJFEK","BCDEFGIL":"CGBDEFLI","BCDEFGIK":"CGBDEFIK","BCDEFGIJ":"CGBDJFEI","BCDEFGHL":"CGBDHFLE","BCDEFGHK":"CGBDHFEK","BCDEFGHJ":"HGBCJFDE","BCDEFGHI":"CGBDHFEI","AFGHIJKL":"HJIFAGLK","AEGHIJKL":"EJIAHGLK","AEFHIJKL":"EJIFAHLK","AEFGIJKL":"EJIFAGLK","AEFGHJKL":"EGJFAHLK","AEFGHIKL":"EGIFAHLK","AEFGHIJL":"EGJFAHLI","AEFGHIJK":"EGJFAHIK","ADGHIJKL":"HJIDAGLK","ADFHIJKL":"HJIDAFLK","ADFGIJKL":"IGJDAFLK","ADFGHJKL":"HGJDAFLK","ADFGHIKL":"HGIDAFLK","ADFGHIJL":"HGJDAFLI","ADFGHIJK":"HGJDAFIK","ADEHIJKL":"EJIDAHLK","ADEGIJKL":"EJIDAGLK","ADEGHJKL":"EGJDAHLK","ADEGHIKL":"EGIDAHLK","ADEGHIJL":"EGJDAHLI","ADEGHIJK":"EGJDAHIK","ADEFIJKL":"EJIDAFLK","ADEFHJKL":"HJEDAFLK","ADEFHIKL":"HEIDAFLK","ADEFHIJL":"HJEDAFLI","ADEFHIJK":"HJEDAFIK","ADEFGJKL":"EGJDAFLK","ADEFGIKL":"EGIDAFLK","ADEFGIJL":"EGJDAFLI","ADEFGIJK":"EGJDAFIK","ADEFGHKL":"HGEDAFLK","ADEFGHJL":"HGJDAFLE","ADEFGHJK":"HGJDAFEK","ADEFGHIL":"HGEDAFLI","ADEFGHIK":"HGEDAFIK","ADEFGHIJ":"HGJDAFEI","ACGHIJKL":"HJICAGLK","ACFHIJKL":"HJICAFLK","ACFGIJKL":"IGJCAFLK","ACFGHJKL":"HGJCAFLK","ACFGHIKL":"HGICAFLK","ACFGHIJL":"HGJCAFLI","ACFGHIJK":"HGJCAFIK","ACEHIJKL":"EJICAHLK","ACEGIJKL":"EJICAGLK","ACEGHJKL":"EGJCAHLK","ACEGHIKL":"EGICAHLK","ACEGHIJL":"EGJCAHLI","ACEGHIJK":"EGJCAHIK","ACEFIJKL":"EJICAFLK","ACEFHJKL":"HJECAFLK","ACEFHIKL":"HEICAFLK","ACEFHIJL":"HJECAFLI","ACEFHIJK":"HJECAFIK","ACEFGJKL":"EGJCAFLK","ACEFGIKL":"EGICAFLK","ACEFGIJL":"EGJCAFLI","ACEFGIJK":"EGJCAFIK","ACEFGHKL":"HGECAFLK","ACEFGHJL":"HGJCAFLE","ACEFGHJK":"HGJCAFEK","ACEFGHIL":"HGECAFLI","ACEFGHIK":"HGECAFIK","ACEFGHIJ":"HGJCAFEI","ACDHIJKL":"HJICADLK","ACDGIJKL":"IGJCADLK","ACDGHJKL":"HGJCADLK","ACDGHIKL":"HGICADLK","ACDGHIJL":"HGJCADLI","ACDGHIJK":"HGJCADIK","ACDFIJKL":"CJIDAFLK","ACDFHJKL":"HJFCADLK","ACDFHIKL":"HFICADLK","ACDFHIJL":"HJFCADLI","ACDFHIJK":"HJFCADIK","ACDFGJKL":"CGJDAFLK","ACDFGIKL":"CGIDAFLK","ACDFGIJL":"CGJDAFLI","ACDFGIJK":"CGJDAFIK","ACDFGHKL":"HGFCADLK","ACDFGHJL":"CGJDAFLH","ACDFGHJK":"HGJCAFDK","ACDFGHIL":"HGFCADLI","ACDFGHIK":"HGFCADIK","ACDFGHIJ":"HGJCAFDI","ACDEIJKL":"EJICADLK","ACDEHJKL":"HJECADLK","ACDEHIKL":"HEICADLK","ACDEHIJL":"HJECADLI","ACDEHIJK":"HJECADIK","ACDEGJKL":"EGJCADLK","ACDEGIKL":"EGICADLK","ACDEGIJL":"EGJCADLI","ACDEGIJK":"EGJCADIK","ACDEGHKL":"HGECADLK","ACDEGHJL":"HGJCADLE","ACDEGHJK":"HGJCADEK","ACDEGHIL":"HGECADLI","ACDEGHIK":"HGECADIK","ACDEGHIJ":"HGJCADEI","ACDEFJKL":"CJEDAFLK","ACDEFIKL":"CEIDAFLK","ACDEFIJL":"CJEDAFLI","ACDEFIJK":"CJEDAFIK","ACDEFHKL":"HEFCADLK","ACDEFHJL":"HJFCADLE","ACDEFHJK":"HJECAFDK","ACDEFHIL":"HEFCADLI","ACDEFHIK":"HEFCADIK","ACDEFHIJ":"HJECAFDI","ACDEFGKL":"CGEDAFLK","ACDEFGJL":"CGJDAFLE","ACDEFGJK":"CGJDAFEK","ACDEFGIL":"CGEDAFLI","ACDEFGIK":"CGEDAFIK","ACDEFGIJ":"CGJDAFEI","ACDEFGHL":"HGFCADLE","ACDEFGHK":"HGECAFDK","ACDEFGHJ":"HGJCAFDE","ACDEFGHI":"HGECAFDI","ABGHIJKL":"HJBAIGLK","ABFHIJKL":"HJBAIFLK","ABFGIJKL":"IJBFAGLK","ABFGHJKL":"HJBFAGLK","ABFGHIKL":"HGBAIFLK","ABFGHIJL":"HJBFAGLI","ABFGHIJK":"HJBFAGIK","ABEHIJKL":"EJBAIHLK","ABEGIJKL":"EJBAIGLK","ABEGHJKL":"EJBAHGLK","ABEGHIKL":"EGBAIHLK","ABEGHIJL":"EJBAHGLI","ABEGHIJK":"EJBAHGIK","ABEFIJKL":"EJBAIFLK","ABEFHJKL":"EJBFAHLK","ABEFHIKL":"EIBFAHLK","ABEFHIJL":"EJBFAHLI","ABEFHIJK":"EJBFAHIK","ABEFGJKL":"EJBFAGLK","ABEFGIKL":"EGBAIFLK","ABEFGIJL":"EJBFAGLI","ABEFGIJK":"EJBFAGIK","ABEFGHKL":"EGBFAHLK","ABEFGHJL":"HJBFAGLE","ABEFGHJK":"HJBFAGEK","ABEFGHIL":"EGBFAHLI","ABEFGHIK":"EGBFAHIK","ABEFGHIJ":"HJBFAGEI","ABDHIJKL":"IJBDAHLK","ABDGIJKL":"IJBDAGLK","ABDGHJKL":"HJBDAGLK","ABDGHIKL":"IGBDAHLK","ABDGHIJL":"HJBDAGLI","ABDGHIJK":"HJBDAGIK","ABDFIJKL":"IJBDAFLK","ABDFHJKL":"HJBDAFLK","ABDFHIKL":"HIBDAFLK","ABDFHIJL":"HJBDAFLI","ABDFHIJK":"HJBDAFIK","ABDFGJKL":"FJBDAGLK","ABDFGIKL":"IGBDAFLK","ABDFGIJL":"FJBDAGLI","ABDFGIJK":"FJBDAGIK","ABDFGHKL":"HGBDAFLK","ABDFGHJL":"HGBDAFLJ","ABDFGHJK":"HGBDAFJK","ABDFGHIL":"HGBDAFLI","ABDFGHIK":"HGBDAFIK","ABDFGHIJ":"HGBDAFIJ","ABDEIJKL":"EJBAIDLK","ABDEHJKL":"EJBDAHLK","ABDEHIKL":"EIBDAHLK","ABDEHIJL":"EJBDAHLI","ABDEHIJK":"EJBDAHIK","ABDEGJKL":"EJBDAGLK","ABDEGIKL":"EGBAIDLK","ABDEGIJL":"EJBDAGLI","ABDEGIJK":"EJBDAGIK","ABDEGHKL":"EGBDAHLK","ABDEGHJL":"HJBDAGLE","ABDEGHJK":"HJBDAGEK","ABDEGHIL":"EGBDAHLI","ABDEGHIK":"EGBDAHIK","ABDEGHIJ":"HJBDAGEI","ABDEFJKL":"EJBDAFLK","ABDEFIKL":"EIBDAFLK","ABDEFIJL":"EJBDAFLI","ABDEFIJK":"EJBDAFIK","ABDEFHKL":"HEBDAFLK","ABDEFHJL":"HJBDAFLE","ABDEFHJK":"HJBDAFEK","ABDEFHIL":"HEBDAFLI","ABDEFHIK":"HEBDAFIK","ABDEFHIJ":"HJBDAFEI","ABDEFGKL":"EGBDAFLK","ABDEFGJL":"EGBDAFLJ","ABDEFGJK":"EGBDAFJK","ABDEFGIL":"EGBDAFLI","ABDEFGIK":"EGBDAFIK","ABDEFGIJ":"EGBDAFIJ","ABDEFGHL":"HGBDAFLE","ABDEFGHK":"HGBDAFEK","ABDEFGHJ":"HGBDAFEJ","ABDEFGHI":"HGBDAFEI","ABCHIJKL":"IJBCAHLK","ABCGIJKL":"IJBCAGLK","ABCGHJKL":"HJBCAGLK","ABCGHIKL":"IGBCAHLK","ABCGHIJL":"HJBCAGLI","ABCGHIJK":"HJBCAGIK","ABCFIJKL":"IJBCAFLK","ABCFHJKL":"HJBCAFLK","ABCFHIKL":"HIBCAFLK","ABCFHIJL":"HJBCAFLI","ABCFHIJK":"HJBCAFIK","ABCFGJKL":"CJBFAGLK","ABCFGIKL":"IGBCAFLK","ABCFGIJL":"CJBFAGLI","ABCFGIJK":"CJBFAGIK","ABCFGHKL":"HGBCAFLK","ABCFGHJL":"HGBCAFLJ","ABCFGHJK":"HGBCAFJK","ABCFGHIL":"HGBCAFLI","ABCFGHIK":"HGBCAFIK","ABCFGHIJ":"HGBCAFIJ","ABCEIJKL":"EJBAICLK","ABCEHJKL":"EJBCAHLK","ABCEHIKL":"EIBCAHLK","ABCEHIJL":"EJBCAHLI","ABCEHIJK":"EJBCAHIK","ABCEGJKL":"EJBCAGLK","ABCEGIKL":"EGBAICLK","ABCEGIJL":"EJBCAGLI","ABCEGIJK":"EJBCAGIK","ABCEGHKL":"EGBCAHLK","ABCEGHJL":"HJBCAGLE","ABCEGHJK":"HJBCAGEK","ABCEGHIL":"EGBCAHLI","ABCEGHIK":"EGBCAHIK","ABCEGHIJ":"HJBCAGEI","ABCEFJKL":"EJBCAFLK","ABCEFIKL":"EIBCAFLK","ABCEFIJL":"EJBCAFLI","ABCEFIJK":"EJBCAFIK","ABCEFHKL":"HEBCAFLK","ABCEFHJL":"HJBCAFLE","ABCEFHJK":"HJBCAFEK","ABCEFHIL":"HEBCAFLI","ABCEFHIK":"HEBCAFIK","ABCEFHIJ":"HJBCAFEI","ABCEFGKL":"EGBCAFLK","ABCEFGJL":"EGBCAFLJ","ABCEFGJK":"EGBCAFJK","ABCEFGIL":"EGBCAFLI","ABCEFGIK":"EGBCAFIK","ABCEFGIJ":"EGBCAFIJ","ABCEFGHL":"HGBCAFLE","ABCEFGHK":"HGBCAFEK","ABCEFGHJ":"HGBCAFEJ","ABCEFGHI":"HGBCAFEI","ABCDIJKL":"IJBCADLK","ABCDHJKL":"HJBCADLK","ABCDHIKL":"HIBCADLK","ABCDHIJL":"HJBCADLI","ABCDHIJK":"HJBCADIK","ABCDGJKL":"CJBDAGLK","ABCDGIKL":"IGBCADLK","ABCDGIJL":"CJBDAGLI","ABCDGIJK":"CJBDAGIK","ABCDGHKL":"HGBCADLK","ABCDGHJL":"HGBCADLJ","ABCDGHJK":"HGBCADJK","ABCDGHIL":"HGBCADLI","ABCDGHIK":"HGBCADIK","ABCDGHIJ":"HGBCADIJ","ABCDFJKL":"CJBDAFLK","ABCDFIKL":"CIBDAFLK","ABCDFIJL":"CJBDAFLI","ABCDFIJK":"CJBDAFIK","ABCDFHKL":"HFBCADLK","ABCDFHJL":"CJBDAFLH","ABCDFHJK":"HJBCAFDK","ABCDFHIL":"HFBCADLI","ABCDFHIK":"HFBCADIK","ABCDFHIJ":"HJBCAFDI","ABCDFGKL":"CGBDAFLK","ABCDFGJL":"CGBDAFLJ","ABCDFGJK":"CGBDAFJK","ABCDFGIL":"CGBDAFLI","ABCDFGIK":"CGBDAFIK","ABCDFGIJ":"CGBDAFIJ","ABCDFGHL":"CGBDAFLH","ABCDFGHK":"HGBCAFDK","ABCDFGHJ":"HGBCAFDJ","ABCDFGHI":"HGBCAFDI","ABCDEJKL":"EJBCADLK","ABCDEIKL":"EIBCADLK","ABCDEIJL":"EJBCADLI","ABCDEIJK":"EJBCADIK","ABCDEHKL":"HEBCADLK","ABCDEHJL":"HJBCADLE","ABCDEHJK":"HJBCADEK","ABCDEHIL":"HEBCADLI","ABCDEHIK":"HEBCADIK","ABCDEHIJ":"HJBCADEI","ABCDEGKL":"EGBCADLK","ABCDEGJL":"EGBCADLJ","ABCDEGJK":"EGBCADJK","ABCDEGIL":"EGBCADLI","ABCDEGIK":"EGBCADIK","ABCDEGIJ":"EGBCADIJ","ABCDEGHL":"HGBCADLE","ABCDEGHK":"HGBCADEK","ABCDEGHJ":"HGBCADEJ","ABCDEGHI":"HGBCADEI","ABCDEFKL":"CEBDAFLK","ABCDEFJL":"CJBDAFLE","ABCDEFJK":"CJBDAFEK","ABCDEFIL":"CEBDAFLI","ABCDEFIK":"CEBDAFIK","ABCDEFIJ":"CJBDAFEI","ABCDEFHL":"HFBCADLE","ABCDEFHK":"HEBCAFDK","ABCDEFHJ":"HJBCAFDE","ABCDEFHI":"HEBCAFDI","ABCDEFGL":"CGBDAFLE","ABCDEFGK":"CGBDAFEK","ABCDEFGJ":"CGBDAFEJ","ABCDEFGI":"CGBDAFEI","ABCDEFGH":"HGBCAFDE"};
+const THIRD_SLOTS = ["A", "B", "D", "E", "G", "I", "K", "L"];
+
 function getGroupStandings(matches, includeLive = true) {
   const st = {};
   Object.keys(GRUPOS).forEach(g => { st[g] = GRUPOS[g].map(t => ({ team: t, pts: 0, gf: 0, ga: 0, gd: 0, pld: 0 })); });
@@ -244,7 +316,7 @@ function getGroupStandings(matches, includeLive = true) {
     let gA = TEAM_TO_GROUP[m.teamA.toLowerCase()], gB = TEAM_TO_GROUP[m.teamB.toLowerCase()];
     if(!gA) Object.keys(TEAM_TO_GROUP).forEach(k => { if(m.teamA.toLowerCase().includes(k)) gA = TEAM_TO_GROUP[k]; });
     if(!gB) Object.keys(TEAM_TO_GROUP).forEach(k => { if(m.teamB.toLowerCase().includes(k)) gB = TEAM_TO_GROUP[k]; });
-    
+
     const rA = m.result.a, rB = m.result.b;
     if (gA && st[gA]) {
       const t = st[gA].find(x => x.team.toLowerCase() === m.teamA.toLowerCase() || m.teamA.toLowerCase().includes(x.team.toLowerCase()));
@@ -255,8 +327,50 @@ function getGroupStandings(matches, includeLive = true) {
       if (t) { t.pld++; t.gf += rB; t.ga += rA; t.gd += (rB - rA); if (rB > rA) t.pts += 3; else if (rA === rB) t.pts += 1; }
     }
   });
-  Object.keys(st).forEach(g => { st[g].sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0); });
+  Object.keys(st).forEach(g => { st[g].sort((a, b) => rankGroupTeams(a, b, st[g], groupMatches)); });
   return st;
+}
+
+// Desempate oficial FIFA: 1) pontos gerais; entre empatados no MESMO grupo → confronto direto
+// (pontos h2h → saldo h2h → gols h2h); se persistir → saldo geral → gols gerais.
+// Fair play (cartões) omitido por falta de dados.
+function rankGroupTeams(a, b, allTeams, groupMatches) {
+  if (b.pts !== a.pts) return b.pts - a.pts;
+  // empatados em pontos: junta TODOS os times com os mesmos pontos pra calcular o mini-grupo h2h
+  const tied = allTeams.filter(t => t.pts === a.pts);
+  if (tied.length >= 2) {
+    const h2h = headToHead(tied, groupMatches);
+    const ha = h2h[a.team], hb = h2h[b.team];
+    if (ha && hb) {
+      if (hb.pts !== ha.pts) return hb.pts - ha.pts;
+      if (hb.gd !== ha.gd) return hb.gd - ha.gd;
+      if (hb.gf !== ha.gf) return hb.gf - ha.gf;
+    }
+  }
+  // segundo passo: critérios gerais do grupo
+  if (b.gd !== a.gd) return b.gd - a.gd;
+  if (b.gf !== a.gf) return b.gf - a.gf;
+  return 0;
+}
+
+// Mini-tabela só com os jogos ENTRE os times empatados
+function headToHead(tiedTeams, groupMatches) {
+  const names = tiedTeams.map(t => t.team.toLowerCase());
+  const mini = {};
+  tiedTeams.forEach(t => { mini[t.team] = { pts: 0, gf: 0, ga: 0, gd: 0 }; });
+  const nameOf = (raw) => tiedTeams.find(t => t.team.toLowerCase() === raw.toLowerCase() || raw.toLowerCase().includes(t.team.toLowerCase()))?.team;
+  groupMatches.forEach(m => {
+    const inA = names.some(n => m.teamA.toLowerCase() === n || m.teamA.toLowerCase().includes(n));
+    const inB = names.some(n => m.teamB.toLowerCase() === n || m.teamB.toLowerCase().includes(n));
+    if (!inA || !inB) return; // só jogos entre os empatados
+    const nA = nameOf(m.teamA), nB = nameOf(m.teamB);
+    if (!nA || !nB) return;
+    const rA = m.result.a, rB = m.result.b;
+    mini[nA].gf += rA; mini[nA].ga += rB; mini[nA].gd += (rA - rB);
+    mini[nB].gf += rB; mini[nB].ga += rA; mini[nB].gd += (rB - rA);
+    if (rA > rB) mini[nA].pts += 3; else if (rA === rB) { mini[nA].pts += 1; mini[nB].pts += 1; } else mini[nB].pts += 3;
+  });
+  return mini;
 }
 
 /* ── Helpers: rodada, evolução, confronto direto ── */
@@ -288,7 +402,7 @@ function getRoundSummary(participants, matches, preds) {
   const dayMatches = days[latestKey].ms;
   const scores = participants.map(p => {
     let pts = 0, exact = 0;
-    dayMatches.forEach(m => { const v = calcPts(preds[p.id]?.[m.id], m.result); if (v != null) { pts += v; if (v === 10) exact++; } });
+    dayMatches.forEach(m => { const v = scoreMatch(preds[p.id]?.[m.id], m); if (v != null) { pts += v; const pl = isKnockoutMatch(m) ? calcPts({a:resolveKO(preds[p.id]?.[m.id],m.teamA,m.teamB)?.finalA,b:resolveKO(preds[p.id]?.[m.id],m.teamA,m.teamB)?.finalB},{a:resolveKO(m.result,m.teamA,m.teamB)?.finalA,b:resolveKO(m.result,m.teamA,m.teamB)?.finalB}) : v; if (pl === 10) exact++; } });
     return { name: p.name, id: p.id, pts, exact };
   }).filter(s => s.pts > 0).sort((a, b) => b.pts - a.pts || b.exact - a.exact);
   return { dayLabel: latestKey, matchCount: dayMatches.length, top: scores.slice(0, 3) };
@@ -306,7 +420,7 @@ function getEvolution(participants, matches, preds) {
   const cum = {}; participants.forEach(p => { cum[p.id] = 0; });
   const series = participants.map(p => ({ id: p.id, name: p.name, points: [], positions: [] }));
   ordered.forEach(day => {
-    day.ms.forEach(m => { participants.forEach(p => { const v = calcPts(preds[p.id]?.[m.id], m.result); if (v != null) cum[p.id] += v; }); });
+    day.ms.forEach(m => { participants.forEach(p => { const v = scoreMatch(preds[p.id]?.[m.id], m); if (v != null) cum[p.id] += v; }); });
     // Posição (rank) de cada um após essa rodada
     const sorted = [...participants].sort((a, b) => (cum[b.id] - cum[a.id]) || a.name.localeCompare(b.name, "pt-BR"));
     const posMap = {}; sorted.forEach((p, i) => { posMap[p.id] = i + 1; });
@@ -393,7 +507,7 @@ function buildRoundPicksText(matches, participants, preds, dayLabel) {
       const pr = preds[p.id]?.[m.id];
       const has = pr && pr.a !== "" && pr.b !== "" && pr.a != null && pr.b != null;
       if (has) {
-        const pts = m.result ? calcPts(pr, m.result) : null;
+        const pts = m.result ? scoreMatch(pr, m) : null;
         const tag = pts != null ? `  ➜ ${pts}pts` : "";
         lines.push(`• ${p.name}: ${pr.a}×${pr.b}${tag}`);
       }
@@ -822,8 +936,8 @@ function PicksDistribution({ match, participants, preds }) {
 function PostGameMural({ match, participants, preds }) {
   const [open, setOpen] = useState(false);
   const sorted = [...participants].sort((a, b) => {
-    const pa = calcPts(preds[a.id]?.[match.id], match.result) ?? -1;
-    const pb = calcPts(preds[b.id]?.[match.id], match.result) ?? -1;
+    const pa = scoreMatch(preds[a.id]?.[match.id], match) ?? -1;
+    const pb = scoreMatch(preds[b.id]?.[match.id], match) ?? -1;
     return pb - pa || a.name.localeCompare(b.name, "pt-BR");
   });
   return (
@@ -838,7 +952,7 @@ function PostGameMural({ match, participants, preds }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {sorted.map(p => {
             const pred = preds[p.id]?.[match.id];
-            const pts = match.result ? calcPts(pred, match.result) : null;
+            const pts = match.result ? scoreMatch(pred, match) : null;
             const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
             return (
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 6, background: C.surface }}>
@@ -1285,21 +1399,58 @@ function TabChaveamento({ matches }) {
   const columns = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
   const finalM = matches.find(m => m.phase === "Final" && m.result && !m.live);
   const champion = finalM ? (finalM.result.a > finalM.result.b ? finalM.teamA : finalM.result.b > finalM.result.a ? finalM.teamB : null) : null;
-  const isDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo/i.test(t);
+  const isDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo|3º/i.test(t);
+  const byId = (id) => matches.find(m => m.id === id);
 
-  // Fase padrão no mobile: a primeira que ainda tem jogo não decidido, senão a primeira com jogos
-  const [selPhase, setSelPhase] = useState(null);
-  const defaultPhase = columns.find(ph => matches.some(m => m.phase === ph && (!m.result || m.live))) || columns.find(ph => matches.some(m => m.phase === ph)) || columns[0];
-  const phaseToShow = selPhase || defaultPhase;
+  // Mapa de origem: qual(is) jogo(s) alimenta(m) cada slot de cada jogo do mata-mata.
+  // m_89 = W(m_73) vs W(m_74); m_97 = W(m_89) vs W(m_90); etc. m_103 = L(101) vs L(102); m_104 = W(101) vs W(102)
+  const originOf = (matchId) => {
+    const n = parseInt((matchId || "").replace("m_", ""));
+    if (isNaN(n) || n < 89) return null; // 32-avos não têm origem (vêm dos grupos)
+    if (n >= 89 && n <= 96) { const base = 73 + (n - 89) * 2; return { a: { id: `m_${base}`, kind: "W" }, b: { id: `m_${base + 1}`, kind: "W" } }; }
+    if (n >= 97 && n <= 100) { const base = 89 + (n - 97) * 2; return { a: { id: `m_${base}`, kind: "W" }, b: { id: `m_${base + 1}`, kind: "W" } }; }
+    if (n === 101) return { a: { id: "m_97", kind: "W" }, b: { id: "m_98", kind: "W" } };
+    if (n === 102) return { a: { id: "m_99", kind: "W" }, b: { id: "m_100", kind: "W" } };
+    if (n === 103) return { a: { id: "m_101", kind: "L" }, b: { id: "m_102", kind: "L" } };
+    if (n === 104) return { a: { id: "m_101", kind: "W" }, b: { id: "m_102", kind: "W" } };
+    return null;
+  };
 
-  const TeamRow = ({ name, score, win, lose, live }) => (
+  // "Times possíveis" de um slot ainda não definido: os 2 times do jogo de origem (ex: "Brasil ou Escócia")
+  const possibleFor = (matchId, side) => {
+    const orig = originOf(matchId);
+    if (!orig) return null;
+    const o = side === "a" ? orig.a : orig.b;
+    const src = byId(o.id);
+    if (!src) return null;
+    const t1 = src.teamA, t2 = src.teamB;
+    if (isDefined(t1) && isDefined(t2)) return { teams: [t1, t2], kind: o.kind, srcNum: o.id.replace("m_", "") };
+    return null;
+  };
+
+  const TeamRow = ({ name, score, win, lose, live, possible }) => {
+    const defined = isDefined(name);
+    // Se não há time definido mas há "possíveis", mostra "🇧🇷 Brasil ou 🏴 Escócia"
+    if (!defined && possible) {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 6 }}>
+          <span style={{ fontSize: 13, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[0])} {possible.teams[0]}</span>
+            <span style={{ color: C.border, fontWeight: 400 }}> ou </span>
+            <span style={{ fontWeight: 700 }}>{teamFlag(possible.teams[1])} {possible.teams[1]}</span>
+          </span>
+        </div>
+      );
+    }
+    return (
     <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", borderRadius: 6, background: win ? `${C.green}1a` : "transparent", opacity: lose ? 0.5 : 1 }}>
-      <span style={{ fontSize: 17, width: 22, textAlign: "center", flexShrink: 0 }}>{teamFlag(name) || (isDefined(name) ? "⚽" : "·")}</span>
-      <span style={{ flex: 1, fontSize: 14, fontWeight: win ? 900 : 700, color: isDefined(name) ? (win ? C.green : C.text) : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isDefined(name) ? "normal" : "italic", textDecoration: lose ? "line-through" : "none", textDecorationColor: `${C.muted}99` }}>{name}</span>
+      <span style={{ fontSize: 17, width: 22, textAlign: "center", flexShrink: 0 }}>{teamFlag(name) || (defined ? "⚽" : "·")}</span>
+      <span style={{ flex: 1, fontSize: 14, fontWeight: win ? 900 : 700, color: defined ? (win ? C.green : C.text) : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: defined ? "normal" : "italic", textDecoration: lose ? "line-through" : "none", textDecorationColor: `${C.muted}99` }}>{name}</span>
       {win && <span style={{ fontSize: 10, color: C.green, flexShrink: 0 }}>▲</span>}
       <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 20, minWidth: 20, textAlign: "center", color: score == null ? C.border : win ? C.green : live ? C.red : C.text, flexShrink: 0 }}>{score == null ? "–" : score}</span>
     </div>
-  );
+    );
+  };
 
   const MatchCard = ({ m, isFinal }) => {
     const h2h = getGroupStageMeeting(m.teamA, m.teamB, matches);
@@ -1312,9 +1463,9 @@ function TabChaveamento({ matches }) {
           {m.date ? <div style={{ fontSize: 9, color: C.muted, fontWeight: 700 }}>{m.date}</div> : <span />}
           {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
         </div>
-        <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} />
-        <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} />
-        {h2h && (
+        <TeamRow name={m.teamA} score={m.result ? m.result.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} possible={possibleFor(m.id, "a")} />
+        <TeamRow name={m.teamB} score={m.result ? m.result.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} possible={possibleFor(m.id, "b")} />
+        {h2h && isDefined(m.teamA) && isDefined(m.teamB) && (
           <div style={{ fontSize: 9, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 4, marginTop: 3 }}>
             🔁 Nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.result.a}×{h2h.result.b}</span>
           </div>
@@ -1322,6 +1473,12 @@ function TabChaveamento({ matches }) {
       </div>
     );
   };
+
+  // Fase padrão no mobile: a primeira que ainda tem jogo não decidido, senão a primeira com jogos
+  const [selPhase, setSelPhase] = useState(null);
+  const defaultPhase = columns.find(ph => matches.some(m => m.phase === ph && (!m.result || m.live))) || columns.find(ph => matches.some(m => m.phase === ph)) || columns[0];
+  const phaseToShow = selPhase || defaultPhase;
+  const phaseIdx = columns.indexOf(phaseToShow);
 
   const ChampionBanner = champion ? (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: `linear-gradient(135deg, ${C.gold}22, ${C.card})`, border: `1px solid ${C.gold}`, borderRadius: 12, padding: "12px 18px", marginBottom: 16 }}>
@@ -1341,57 +1498,75 @@ function TabChaveamento({ matches }) {
     </div>
   ) : null;
 
-  // 📱 MOBILE: seletor de fase + lista vertical (rola pra baixo, sem rolar pro lado)
+  // 📱 MOBILE: deslize entre fases (swipe horizontal) + lista vertical
   if (isMobile) {
+    const goPhase = (dir) => { const ni = phaseIdx + dir; if (ni >= 0 && ni < columns.length) setSelPhase(columns[ni]); };
+    let touchStartX = 0;
+    const onTouchStart = (e) => { touchStartX = e.touches[0].clientX; };
+    const onTouchEnd = (e) => { const dx = e.changedTouches[0].clientX - touchStartX; if (Math.abs(dx) > 60) goPhase(dx < 0 ? 1 : -1); };
+    const ms = matches.filter(m => m.phase === phaseToShow);
+    const isFinal = phaseToShow === "Final";
     return (
       <div>
         {ChampionBanner}
         {LiveNote}
+        {/* pílulas de fase */}
         <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 8, marginBottom: 4 }}>
           {columns.map(ph => {
             const count = matches.filter(m => m.phase === ph).length;
             const active = ph === phaseToShow;
-            const isFinal = ph === "Final";
+            const fin = ph === "Final";
             return (
-              <button key={ph} onClick={() => setSelPhase(ph)} style={{ flexShrink: 0, border: `1px solid ${active ? (isFinal ? C.gold : C.green) : C.border}`, background: active ? (isFinal ? `${C.gold}1a` : `${C.green}1a`) : C.card, color: active ? (isFinal ? C.gold : C.green) : C.muted, borderRadius: 20, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: "inherit", whiteSpace: "nowrap" }}>
-                {isFinal ? "🏆 " : ""}{ph.replace(" de Final", "").replace("3º Lugar", "3º L.")}{count > 0 ? ` (${count})` : ""}
+              <button key={ph} onClick={() => setSelPhase(ph)} style={{ flexShrink: 0, border: `1px solid ${active ? (fin ? C.gold : C.green) : C.border}`, background: active ? (fin ? `${C.gold}1a` : `${C.green}1a`) : C.card, color: active ? (fin ? C.gold : C.green) : C.muted, borderRadius: 20, padding: "7px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12, fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                {fin ? "🏆 " : ""}{ph.replace(" de Final", "").replace("3º Lugar", "3º L.")}{count > 0 ? ` (${count})` : ""}
               </button>
             );
           })}
         </div>
-        <div style={{ marginTop: 8 }}>
-          {(() => {
-            const ms = matches.filter(m => m.phase === phaseToShow);
-            if (ms.length === 0) return <Empty icon="🌳" msg="Esta fase ainda será definida." />;
-            return <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{ms.map(m => <MatchCard key={m.id} m={m} isFinal={phaseToShow === "Final"} />)}</div>;
-          })()}
+        {/* navegação por setas (deslize tbm funciona) */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, margin: "6px 0 10px" }}>
+          <button onClick={() => goPhase(-1)} disabled={phaseIdx === 0} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, color: phaseIdx === 0 ? C.border : C.text, padding: "6px 12px", cursor: phaseIdx === 0 ? "default" : "pointer", fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>‹ Anterior</button>
+          <span style={{ fontSize: 11, color: C.muted }}>deslize ou use as setas</span>
+          <button onClick={() => goPhase(1)} disabled={phaseIdx === columns.length - 1} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, color: phaseIdx === columns.length - 1 ? C.border : C.text, padding: "6px 12px", cursor: phaseIdx === columns.length - 1 ? "default" : "pointer", fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>Próxima ›</button>
+        </div>
+        <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{ marginTop: 4, minHeight: 200 }}>
+          {ms.length === 0 ? <Empty icon="🌳" msg="Esta fase ainda será definida." /> : <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{ms.map(m => <MatchCard key={m.id} m={m} isFinal={isFinal} />)}</div>}
         </div>
       </div>
     );
   }
 
-  // 🖥️ DESKTOP: colunas horizontais
+  // 🖥️ DESKTOP: colunas horizontais com linhas conectoras
   return (
     <div>
       {ChampionBanner}
       {LiveNote}
       <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
-        <div style={{ display: "flex", gap: 20, minWidth: "max-content", padding: "10px 0" }}>
-          {columns.map(ph => {
+        <div style={{ display: "flex", gap: 0, minWidth: "max-content", padding: "10px 0" }}>
+          {columns.map((ph, ci) => {
             const ms = matches.filter(m => m.phase === ph);
             const isFinal = ph === "Final";
+            const hasConnector = ci > 0 && ph !== "3º Lugar" && columns[ci] !== "3º Lugar";
             return (
-              <div key={ph} style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 250, justifyContent: "space-around" }}>
-                <div style={{ textAlign: "center", color: isFinal ? "#06090a" : C.gold, fontWeight: 900, marginBottom: 4, fontSize: 12, letterSpacing: 1, background: isFinal ? C.gold : C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${isFinal ? C.gold : C.border}` }}>
-                  {isFinal ? "🏆 " : ""}{ph.toUpperCase()}
-                </div>
-                {ms.length === 0 ? (
-                  <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>
-                    Aguardando definições...
+              <div key={ph} style={{ display: "flex", alignItems: "stretch" }}>
+                {/* coluna conectora (linhas) entre fases — exceto 3º lugar */}
+                {hasConnector && (
+                  <div style={{ width: 22, display: "flex", flexDirection: "column", justifyContent: "center", alignSelf: "stretch" }}>
+                    <div style={{ flex: 1, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, borderRight: `1px solid ${C.border}`, borderTopRightRadius: 6, borderBottomRightRadius: 6, margin: "30px 0" }} />
                   </div>
-                ) : (
-                  ms.map(m => <MatchCard key={m.id} m={m} isFinal={isFinal} />)
                 )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 240, justifyContent: "space-around", paddingLeft: ci > 0 ? 8 : 0, paddingRight: 8 }}>
+                  <div style={{ textAlign: "center", color: isFinal ? "#06090a" : C.gold, fontWeight: 900, marginBottom: 4, fontSize: 12, letterSpacing: 1, background: isFinal ? C.gold : C.surface, padding: "8px 0", borderRadius: 8, border: `1px solid ${isFinal ? C.gold : C.border}` }}>
+                    {isFinal ? "🏆 " : ""}{ph.toUpperCase()}
+                  </div>
+                  {ms.length === 0 ? (
+                    <div style={{ color: C.muted, fontSize: 12, textAlign: "center", fontStyle: "italic", padding: "30px 10px", border: `1px dashed ${C.border}`, borderRadius: 8 }}>
+                      Aguardando definições...
+                    </div>
+                  ) : (
+                    ms.map(m => <MatchCard key={m.id} m={m} isFinal={isFinal} />)
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1557,36 +1732,43 @@ function processKnockout(currentMatches) {
     seconds[g] = st[g][1] || { team: `2º Grupo ${g}` };
     if (st[g][2]) thirdsList.push({ ...st[g][2], group: g });
   });
+  // Seleciona os 8 melhores terceiros (ranking oficial: pts → saldo → gols)
   thirdsList = thirdsList.sort((a, b) => b.pts - a.pts || b.gd - a.gd || b.gf - a.gf || 0).slice(0, 8);
 
-  const targets = ["A", "B", "D", "E", "G", "I", "K", "L"];
-  const allowed = { "A": ["C","E","F","H","I"], "B": ["E","F","G","I","J"], "D": ["B","E","F","I","J"], "E": ["A","B","C","D","F"], "G": ["A","E","H","I","J"], "I": ["C","D","F","G","H"], "K": ["D","E","I","J","L"], "L": ["E","H","I","J","K"] };
-  
-  let bestAssign = null;
-  function solve(idx, current) {
-    if (bestAssign) return;
-    if (idx === targets.length) { bestAssign = { ...current }; return; }
-    const t = targets[idx];
-    for (let i = 0; i < thirdsList.length; i++) {
-      const th = thirdsList[i];
-      if (!Object.values(current).find(x => x.team === th.team) && (allowed[t].includes(th.group) || th.group !== t)) { current[t] = th; solve(idx + 1, current); delete current[t]; }
-    }
-  }
-  solve(0, {});
-  if (!bestAssign) {
-    bestAssign = {}; let available = [...thirdsList];
-    targets.forEach(t => { 
-        const foundIdx = available.findIndex(x => x.group !== t); 
-        if (foundIdx > -1) { bestAssign[t] = available[foundIdx] || {team: "3º a definir"}; available.splice(foundIdx, 1); } 
-        else { bestAssign[t] = available[0] || {team: "3º a definir"}; available.splice(0, 1); } 
+  // Alocação OFICIAL FIFA (Anexo C / 495 combinações): dado o conjunto dos 8 grupos
+  // que classificaram terceiros, a tabela diz qual grupo-terceiro vai p/ cada slot.
+  const thirdByGroup = {}; thirdsList.forEach(t => { thirdByGroup[t.group] = t; });
+  const qualifiedGroups = thirdsList.map(t => t.group).sort().join("");
+  const allocStr = THIRD_ALLOC[qualifiedGroups]; // ex: "EJIFHGLK" → slots [A,B,D,E,G,I,K,L]
+  const bestAssign = {};
+  if (allocStr && allocStr.length === 8) {
+    THIRD_SLOTS.forEach((slot, i) => {
+      const grp = allocStr[i];
+      bestAssign[slot] = thirdByGroup[grp] || { team: `3º Grupo ${grp}` };
     });
+  } else {
+    // Fallback (ainda não há 8 terceiros definidos): mostra placeholders por slot
+    THIRD_SLOTS.forEach((slot, i) => { bestAssign[slot] = thirdsList[i] || { team: "3º a definir" }; });
   }
 
+  // R32 conforme schedule OFICIAL (Match 73-88)
   const r32 = [
-    { tA: firsts["A"].team, tB: bestAssign["A"].team }, { tA: firsts["B"].team, tB: bestAssign["B"].team }, { tA: firsts["C"].team, tB: seconds["F"].team }, { tA: firsts["D"].team, tB: bestAssign["D"].team },
-    { tA: firsts["E"].team, tB: bestAssign["E"].team }, { tA: firsts["F"].team, tB: seconds["C"].team }, { tA: firsts["G"].team, tB: bestAssign["G"].team }, { tA: firsts["H"].team, tB: seconds["J"].team },
-    { tA: firsts["I"].team, tB: bestAssign["I"].team }, { tA: firsts["J"].team, tB: seconds["H"].team }, { tA: firsts["K"].team, tB: bestAssign["K"].team }, { tA: firsts["L"].team, tB: bestAssign["L"].team },
-    { tA: seconds["A"].team, tB: seconds["B"].team }, { tA: seconds["D"].team, tB: seconds["E"].team }, { tA: seconds["G"].team, tB: seconds["I"].team }, { tA: seconds["K"].team, tB: seconds["L"].team }
+    { tA: seconds["A"].team, tB: seconds["B"].team },                 // 73: 2A x 2B
+    { tA: firsts["E"].team,  tB: bestAssign["E"].team },              // 74: 1E x 3(A/B/C/D/F)
+    { tA: firsts["F"].team,  tB: seconds["C"].team },                 // 75: 1F x 2C
+    { tA: firsts["C"].team,  tB: seconds["F"].team },                 // 76: 1C x 2F
+    { tA: firsts["I"].team,  tB: bestAssign["I"].team },              // 77: 1I x 3(C/D/F/G/H)
+    { tA: seconds["E"].team, tB: seconds["I"].team },                 // 78: 2E x 2I
+    { tA: firsts["A"].team,  tB: bestAssign["A"].team },              // 79: 1A x 3(C/E/F/H/I)
+    { tA: firsts["L"].team,  tB: bestAssign["L"].team },              // 80: 1L x 3(E/H/I/J/K)
+    { tA: firsts["D"].team,  tB: bestAssign["D"].team },              // 81: 1D x 3(B/E/F/I/J)
+    { tA: firsts["G"].team,  tB: bestAssign["G"].team },              // 82: 1G x 3(A/E/H/I/J)
+    { tA: seconds["K"].team, tB: seconds["L"].team },                 // 83: 2K x 2L
+    { tA: firsts["H"].team,  tB: seconds["J"].team },                 // 84: 1H x 2J
+    { tA: firsts["B"].team,  tB: bestAssign["B"].team },              // 85: 1B x 3(E/F/G/I/J)
+    { tA: firsts["J"].team,  tB: seconds["H"].team },                 // 86: 1J x 2H
+    { tA: firsts["K"].team,  tB: bestAssign["K"].team },              // 87: 1K x 3(D/E/I/J/L)
+    { tA: seconds["D"].team, tB: seconds["G"].team },                 // 88: 2D x 2G
   ];
 
   // 2. Tabela oficial de IDs e Datas do Mata-Mata
@@ -1666,13 +1848,22 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
     alert("✅ Grade oficial de 104 partidas criada! O chaveamento agora é 100% automático.");
   };
 
-  const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b) } : { a: "", b: "" }); };
+  const startEdit = (m) => { setEditId(m.id); setTempR(m.result ? { a: String(m.result.a), b: String(m.result.b), etA: m.result.etA != null ? String(m.result.etA) : "", etB: m.result.etB != null ? String(m.result.etB) : "", pen: m.result.pen || "" } : { a: "", b: "", etA: "", etB: "", pen: "" }); };
 
   // ⚡ Salva o placar. live=true → parcial (ao vivo); live=false → resultado final oficial.
   const saveResult = async (id, live) => {
     const a = parseInt(tempR.a), b = parseInt(tempR.b);
     if (!isNaN(a) && !isNaN(b) && a >= 0 && b >= 0) {
-      let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: { a, b }, live: !!live } : m));
+      const match = matches.find(m => m.id === id);
+      const isKO = match && MATA_MATA.includes(match.phase);
+      let resultObj = { a, b };
+      if (isKO) {
+        // carrega prorrogação/pênalti se informados
+        const etA = tempR.etA, etB = tempR.etB;
+        if (etA != null && etA !== "" && etB != null && etB !== "") { resultObj.etA = parseInt(etA); resultObj.etB = parseInt(etB); }
+        if (tempR.pen) resultObj.pen = tempR.pen;
+      }
+      let nextMatches = matches.map((m) => (m.id === id ? { ...m, result: resultObj, live: !!live } : m));
       nextMatches = processKnockout(nextMatches);
       setSaving(true);
       await onChange(nextMatches);
@@ -1710,6 +1901,7 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
               </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ flex: 1, fontWeight: 700, fontSize: 14, color: C.text }}>{m.teamA}</span><ScoreIn value={tempR.a} onChange={(v) => setTempR((t) => ({ ...t, a: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} autoFocus /><span style={{ color: C.muted }}>×</span><ScoreIn value={tempR.b} onChange={(v) => setTempR((t) => ({ ...t, b: v }))} onKeyDown={(e) => e.key === "Enter" && !saving && saveResult(m.id, true)} /><span style={{ flex: 1, fontWeight: 700, fontSize: 14, textAlign: "right", color: C.text }}>{m.teamB}</span></div>
+            {MATA_MATA.includes(m.phase) && <KnockoutInputs pred={tempR} teamA={m.teamA} teamB={m.teamB} disabled={false} onChange={(fields) => setTempR((t) => ({ ...t, ...fields }))} />}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => !saving && saveResult(m.id, true)} style={BTN({ flex: 1, fontSize: 13, background: C.red, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : (m.result && !m.live ? "🔴 Voltar p/ Parcial" : "🔴 Salvar Parcial")}</button>
               <button onClick={() => { if (saving) return; if (window.confirm("Finalizar este resultado como OFICIAL?\n\nIsso passa a contar cravadas, bônus e resumo da rodada. Use só quando o jogo tiver acabado.")) saveResult(m.id, false); }} style={BTN({ flex: 1, fontSize: 13, opacity: saving ? 0.7 : 1 })}>{saving ? "⏳" : "✓ Finalizar"}</button>
@@ -1767,6 +1959,59 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
   );
 }
 
+// Fluxo guiado de palpite/resultado do mata-mata: normal → (empate) prorrogação → (empate) pênaltis
+function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
+  const a = pred.a, b = pred.b;
+  const hasScore = a !== "" && a != null && b !== "" && b != null;
+  const isDraw = hasScore && parseInt(a) === parseInt(b);
+  const hasET = pred.etA != null && pred.etA !== "" && pred.etB != null && pred.etB !== "";
+  const etDraw = hasET && parseInt(pred.etA) === parseInt(pred.etB);
+  const teamDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo|3º/i.test(t);
+  const named = teamDefined(teamA) && teamDefined(teamB);
+
+  const set = (fields) => onChange(fields);
+  const btn = (active) => ({ flex: 1, padding: "8px 6px", borderRadius: 8, border: `1px solid ${active ? C.green : C.border}`, background: active ? `${C.green}1a` : C.surface, color: active ? C.green : C.muted, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", fontFamily: "inherit" });
+
+  if (!isDraw) return null; // só mostra etapas extras se o tempo normal for empate
+
+  // Empate no normal → escolher: mantém placar (vai pênaltis) ou sai gol (placar da prorrogação)
+  const mantem = hasET && pred.etA === pred.a && pred.etB === pred.b;
+  return (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 11, color: C.gold, fontWeight: 700 }}>⏱️ Empatou! E na prorrogação?</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button disabled={disabled} onClick={() => set({ etA: a, etB: b, pen: pred.pen || "" })} style={btn(mantem)}>Mantém {a}×{b} → pênaltis</button>
+        <button disabled={disabled} onClick={() => set({ etA: "", etB: "", pen: "" })} style={btn(hasET && !mantem)}>Sai gol na prorrogação</button>
+      </div>
+
+      {hasET && !mantem && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+          <span style={{ fontSize: 11, color: C.muted }}>Placar final:</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamA}</span>
+          <ScoreIn value={pred.etA ?? ""} onChange={(v) => set({ etA: v })} disabled={disabled} />
+          <span style={{ color: C.muted }}>×</span>
+          <ScoreIn value={pred.etB ?? ""} onChange={(v) => set({ etB: v })} disabled={disabled} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamB}</span>
+        </div>
+      )}
+      {hasET && !mantem && pred.etA === pred.a && pred.etB === pred.b && (
+        <div style={{ fontSize: 10, color: C.red, textAlign: "center" }}>⚠️ O placar da prorrogação não pode ser igual ao do tempo normal. Mude o placar ou use "Mantém".</div>
+      )}
+
+      {/* Pênaltis: só se a prorrogação também for empate (mantém OU placar empatado) */}
+      {((mantem) || (hasET && !mantem && etDraw)) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 11, color: C.gold, fontWeight: 700, textAlign: "center" }}>🎯 Quem passa nos pênaltis?</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button disabled={disabled} onClick={() => set({ pen: "A" })} style={btn(pred.pen === "A")}>{teamFlag(teamA)} {named ? teamA : "Time 1"}</button>
+            <button disabled={disabled} onClick={() => set({ pen: "B" })} style={btn(pred.pen === "B")}>{teamFlag(teamB)} {named ? teamB : "Time 2"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabPalpites({ participants, matches, preds, onChange, savePin, sessionUnlocked, setSessionUnlocked, onSaved, isAdmin, onPickSpecial }) {
   const isMobile = useIsMobile(); const [selPid, setSelPid] = useState(""); const [pinInput, setPinInput] = useState(""); const [filter, setFilter] = useState("hoje");
   const sortedParticipants = [...participants].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -1776,6 +2021,12 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   const setPred = (matchId, side, val) => {
     if (!activePid) return;
     const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { ...(preds[activePid]?.[matchId] || {}), [side]: val } } };
+    onChange(next); onSaved();
+  };
+  // Atualiza vários campos do palpite de uma vez (placar, etA, etB, pen)
+  const setPredFields = (matchId, fields) => {
+    if (!activePid) return;
+    const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { ...(preds[activePid]?.[matchId] || {}), ...fields } } };
     onChange(next); onSaved();
   };
 
@@ -1824,7 +2075,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
               <Divider label={ph} />
               {ms.map((m) => {
                 const pred = preds[activePid]?.[m.id] || {};
-                const pts = m.result ? calcPts(pred, m.result) : null;
+                const pts = m.result ? scoreMatch(pred, m) : null;
                 const locked = isLocked(m.date);
                 const closingSoon = !locked && isClosingSoon(m.date);
                 return (
@@ -1838,6 +2089,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamB}</span>
                       <PtsBadge pts={pts} />
                     </div>
+                    {isKnockoutMatch(m) && <KnockoutInputs pred={pred} teamA={m.teamA} teamB={m.teamB} disabled={locked} onChange={(fields) => setPredFields(m.id, fields)} />}
                     {(locked || m.result) && <PostGameMural match={m} participants={participants} preds={preds} />}
                   </div>
                 );
@@ -1961,7 +2213,7 @@ function TabVisao({ participants, matches, preds, isAdmin }) {
                 <td style={{ padding: "10px 8px", textAlign: "center", fontFamily: "'Bebas Neue', cursive", fontSize: 16, color: C.green, letterSpacing: 1, background: "#0002", borderBottom: `1px solid ${C.border}44` }}>{m.result.a}×{m.result.b}</td>
                 {ranked.map((p) => {
                   const pred = preds[p.id]?.[m.id];
-                  const pts = calcPts(pred, m.result);
+                  const pts = scoreMatch(pred, m);
                   const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
                   return (
                     <td key={p.id} style={{ padding: "6px", textAlign: "center", borderBottom: `1px solid ${C.border}44` }}>
@@ -2008,11 +2260,11 @@ export default function BolaoApp() {
       ]);
       if (dbParticipants) setParticipants(dbParticipants);
       if (dbJogos && dbJogos.length > 0) {
-        setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, live: j.is_live === true })));
+        setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b, etA: j.result_et_a, etB: j.result_et_b, pen: j.result_pen || "" } : null, live: j.is_live === true })));
       }
       if (dbPalpites) {
         const objPreds = {};
-        dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b }; });
+        dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
         setPreds(objPreds);
       }
       setLastSync(new Date());
@@ -2052,12 +2304,12 @@ export default function BolaoApp() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
         const { data } = await supabase.from('jogos').select('*');
         if (data) {
-          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b } : null, live: j.is_live === true })));
+          setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b, etA: j.result_et_a, etB: j.result_et_b, pen: j.result_pen || "" } : null, live: j.is_live === true })));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
         const { data } = await supabase.from('palpites').select('*');
-        if (data) { const objPreds = {}; data.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b }; }); setPreds(objPreds); }
+        if (data) { const objPreds = {}; data.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; }); setPreds(objPreds); }
       })
       .subscribe();
     return () => supabase.removeChannel(channel);
@@ -2078,11 +2330,17 @@ export default function BolaoApp() {
     const changed = d.filter(j => { const old = matches.find(m => m.id === j.id); if (!old) return true; return old.teamA !== j.teamA || old.teamB !== j.teamB || old.date !== j.date || JSON.stringify(old.result) !== JSON.stringify(j.result) || (old.live === true) !== (j.live === true); });
     setMatches(d);
     if (changed.length === 0) { console.warn("sm: nenhuma mudança detectada, upsert ignorado"); return; }
-    const rows = changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null, is_live: j.live === true }));
+    const rows = changed.map(j => ({ id: j.id, team_a: j.teamA, team_b: j.teamB, phase: j.phase, match_date: j.date || "TBD", result_a: j.result ? j.result.a : null, result_b: j.result ? j.result.b : null, result_et_a: j.result && j.result.etA != null && j.result.etA !== "" ? parseInt(j.result.etA) : null, result_et_b: j.result && j.result.etB != null && j.result.etB !== "" ? parseInt(j.result.etB) : null, result_pen: j.result && j.result.pen ? j.result.pen : null, is_live: j.live === true }));
     let { error } = await supabase.from('jogos').upsert(rows);
+    // Se as colunas de prorrogação/pênalti ainda não existirem, tenta sem elas (degradação suave)
+    if (error && /result_et|result_pen/.test(error.message || "")) {
+      const rowsNoKO = rows.map(({ result_et_a, result_et_b, result_pen, ...rest }) => rest);
+      ({ error } = await supabase.from('jogos').upsert(rowsNoKO));
+      if (!error) showToast("⚠️ Salvo, mas rode a migração de prorrogação/pênalti p/ o mata-mata sincronizar", "error");
+    }
     // Se a coluna is_live ainda não existir, tenta de novo sem ela (degradação suave)
     if (error && /is_live/.test(error.message || "")) {
-      const rowsNoLive = rows.map(({ is_live, ...rest }) => rest);
+      const rowsNoLive = rows.map(({ is_live, result_et_a, result_et_b, result_pen, ...rest }) => rest);
       ({ error } = await supabase.from('jogos').upsert(rowsNoLive));
       if (!error) showToast("⚠️ Salvo, mas rode a migração 'is_live' p/ o modo AO VIVO sincronizar", "error");
     }
@@ -2118,10 +2376,15 @@ export default function BolaoApp() {
 
   const spr = async (d) => {
     const toSave = [];
-    Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => { const p = d[participante_id][jogo_id]; if (p.a === "" || p.b === "" || p.a == null || p.b == null) return; const old = preds[participante_id]?.[jogo_id]; if (!old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b)) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b) }); }); });
+    Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => { const p = d[participante_id][jogo_id]; if (p.a === "" || p.b === "" || p.a == null || p.b == null) return; const old = preds[participante_id]?.[jogo_id]; const changed = !old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b) || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? ""); if (changed) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null }); }); });
     setPreds(d);
     if (toSave.length === 0) return;
-    const { error } = await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
+    let { error } = await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
+    if (error && /palpite_et|palpite_pen/.test(error.message || "")) {
+      const stripped = toSave.map(({ palpite_et_a, palpite_et_b, palpite_pen, ...rest }) => rest);
+      ({ error } = await supabase.from('palpites').upsert(stripped, { onConflict: 'participante_id, jogo_id' }));
+      if (!error) showToast("⚠️ Palpite salvo, mas rode a migração de prorrogação/pênalti", "error");
+    }
     if (error) showToast("❌ Palpite não foi salvo! Verifique a conexão.", "error");
   };
 
