@@ -118,6 +118,39 @@ function calcPtsKnockout(pred, match) {
   return Math.round(pts * mult);
 }
 
+// Detalha de ONDE vêm os pontos do mata-mata (pra exibir ao vivo). Retorna { parts: [{label, pts}], total, mult }.
+function knockoutBreakdown(pred, match) {
+  if (!match || !match.result) return null;
+  const teamA = match.teamA, teamB = match.teamB;
+  const R = resolveKO(match.result, teamA, teamB);
+  const P = resolveKO(pred, teamA, teamB);
+  if (!R || !P) return null;
+  const parts = [];
+  const base = calcPts({ a: P.finalA, b: P.finalB }, { a: R.finalA, b: R.finalB });
+  if (base != null && base > 0) parts.push({ label: base === 10 ? "Placar exato" : base === 7 ? "Vencedor + gols" : base === 5 ? "Acertou o vencedor" : "1 gol certo", pts: base });
+  if (R.advancer && P.advancer === R.advancer) parts.push({ label: "Acertou quem passa", pts: KO_BONUS.classif });
+  if (P.hadET === R.hadET) parts.push({ label: R.hadET ? "Previu prorrogação" : "Previu que decidia no normal", pts: KO_BONUS.prorrog });
+  if (R.hadET && P.hadET && P.finalA === R.finalA && P.finalB === R.finalB) parts.push({ label: "Cravou placar da prorrog.", pts: KO_BONUS.placarProrrog });
+  if (R.hadPK && P.hadPK && R.advancer && P.advancer === R.advancer) parts.push({ label: "Acertou os pênaltis", pts: KO_BONUS.penalti });
+  const mult = PHASE_MULT[match.phase] || 1;
+  const subtotal = parts.reduce((s, p) => s + p.pts, 0);
+  return { parts, subtotal, mult, total: Math.round(subtotal * mult) };
+}
+
+// Resumo curto do palpite de mata-mata em UMA linha (pro mural compacto)
+function shortKnockoutPick(pred, match) {
+  if (!pred || pred.a === "" || pred.a == null) return "—";
+  const P = resolveKO(pred, match.teamA, match.teamB);
+  if (!P) return `${pred.a}×${pred.b}`;
+  let s = `${pred.a}×${pred.b}`;
+  if (P.hadET) {
+    if (P.hadPK) s += ` → pênaltis`;
+    else s += ` → prorrog. ${P.finalA}×${P.finalB}`;
+  }
+  if (P.advancer) { const fl = teamFlag(P.advancer); s += ` ${fl || "✓"}`; }
+  return s;
+}
+
 // Decide se um jogo usa pontuação de mata-mata
 function isKnockoutMatch(match) { return match && MATA_MATA.includes(match.phase); }
 
@@ -991,6 +1024,7 @@ function PicksDistribution({ match, participants, preds }) {
 
 function PostGameMural({ match, participants, preds }) {
   const [open, setOpen] = useState(false);
+  const isKO = isKnockoutMatch(match);
   const sorted = [...participants].sort((a, b) => {
     const pa = scoreMatch(preds[a.id]?.[match.id], match) ?? -1;
     const pb = scoreMatch(preds[b.id]?.[match.id], match) ?? -1;
@@ -1005,18 +1039,46 @@ function PostGameMural({ match, participants, preds }) {
       {open && (
         <div style={{ marginTop: 8 }}>
           <PicksDistribution match={match} participants={participants} preds={preds} />
+          {isKO && match.result && (
+            <div style={{ fontSize: 10, color: match.live ? C.red : C.muted, textAlign: "center", marginBottom: 6, fontWeight: 700 }}>
+              {match.live ? "🔴 Pontuação PARCIAL (muda conforme o jogo evolui)" : "✓ Pontuação final do confronto"}
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          {sorted.map(p => {
+          {sorted.map((p, idx) => {
             const pred = preds[p.id]?.[match.id];
             const pts = match.result ? scoreMatch(pred, match) : null;
             const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
+            const bd = (isKO && match.result && hasPred) ? knockoutBreakdown(pred, match) : null;
+            // Líder no momento (maior pontuação > 0), só destaca quando há resultado
+            const isLeader = match.result && pts != null && pts > 0 && idx === 0;
             return (
-              <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 6, background: C.surface }}>
-                <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                <span style={{ fontSize: 13, color: hasPred ? C.text : C.border, fontFamily: "'Bebas Neue', cursive", letterSpacing: 1, minWidth: 50, textAlign: "center" }}>
-                  {hasPred ? `${pred.a} × ${pred.b}` : "—"}
-                </span>
-                <PtsBadge pts={pts} />
+              <div key={p.id} style={{ borderRadius: 6, background: isLeader ? `${C.gold}12` : C.surface, border: isLeader ? `1px solid ${C.gold}44` : "1px solid transparent", overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px" }}>
+                  {isLeader && <span style={{ fontSize: 11, flexShrink: 0 }}>👑</span>}
+                  <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                  <span style={{ fontSize: isKO ? 10.5 : 13, color: hasPred ? (isKO ? C.greenDim : C.text) : C.border, fontFamily: isKO ? "inherit" : "'Bebas Neue', cursive", letterSpacing: isKO ? 0 : 1, minWidth: isKO ? 0 : 50, textAlign: "center", whiteSpace: "nowrap", fontWeight: isKO ? 700 : 400 }}>
+                    {hasPred ? (isKO ? shortKnockoutPick(pred, match) : `${pred.a} × ${pred.b}`) : "—"}
+                  </span>
+                  <PtsBadge pts={pts} />
+                </div>
+                {/* Detalhamento dos pontos do mata-mata (de onde vieram) */}
+                {bd && bd.parts.length > 0 && (
+                  <div style={{ padding: "2px 8px 6px 8px", display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                    {bd.parts.map((pt, i) => (
+                      <span key={i} style={{ fontSize: 9.5, color: C.greenDim, background: `${C.green}14`, border: `1px solid ${C.green}33`, borderRadius: 4, padding: "1px 5px", fontWeight: 700 }}>{pt.label} +{pt.pts}</span>
+                    ))}
+                    {bd.mult !== 1 && (
+                      <span style={{ fontSize: 9.5, color: C.gold, background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 4, padding: "1px 5px", fontWeight: 900 }}>×{bd.mult} ({bd.subtotal}→{bd.total})</span>
+                    )}
+                  </div>
+                )}
+                {/* Ao vivo: se ainda não pontuou, mostra o que precisaria acontecer */}
+                {isKO && match.result && match.live && hasPred && bd && bd.parts.length === 0 && (
+                  <div style={{ padding: "2px 8px 6px 8px", fontSize: 9.5, color: C.muted, fontStyle: "italic" }}>
+                    Sem pontos no placar atual — ainda pode mudar
+                  </div>
+                )}
               </div>
             );
           })}
