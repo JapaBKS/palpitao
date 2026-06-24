@@ -1468,7 +1468,7 @@ function TabChaveamento({ matches }) {
     return { teams: [...acc], kind: o.kind, srcNum };
   };
 
-  const TeamRow = ({ name, score, win, lose, live, possible }) => {
+  const TeamRow = ({ name, score, win, lose, live, possible, advanceTag }) => {
     const defined = isDefined(name);
     // Slot ainda não definido: mostra de onde vem (nº do jogo) e TODOS os times que podem chegar
     if (!defined && possible) {
@@ -1500,7 +1500,8 @@ function TabChaveamento({ matches }) {
     <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", borderRadius: 6, background: win ? `${C.green}1a` : "transparent", opacity: lose ? 0.5 : 1 }}>
       <span style={{ fontSize: 17, width: 22, textAlign: "center", flexShrink: 0 }}>{teamFlag(name) || (defined ? "⚽" : "·")}</span>
       <span style={{ flex: 1, fontSize: 14, fontWeight: win ? 900 : 700, color: defined ? (win ? C.green : C.text) : C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: defined ? "normal" : "italic", textDecoration: lose ? "line-through" : "none", textDecorationColor: `${C.muted}99` }}>{name}</span>
-      {win && <span style={{ fontSize: 10, color: C.green, flexShrink: 0 }}>▲</span>}
+      {win && advanceTag && <span style={{ fontSize: 8.5, fontWeight: 900, color: "#06090a", background: C.green, borderRadius: 4, padding: "2px 5px", flexShrink: 0, letterSpacing: 0.3 }}>✓ {advanceTag}</span>}
+      {win && !advanceTag && <span style={{ fontSize: 10, color: C.green, flexShrink: 0 }}>▲</span>}
       <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 20, minWidth: 20, textAlign: "center", color: score == null ? C.border : win ? C.green : live ? C.red : C.text, flexShrink: 0 }}>{score == null ? "–" : score}</span>
     </div>
     );
@@ -1514,6 +1515,9 @@ function TabChaveamento({ matches }) {
     const aWin = m.result && (adv ? adv === m.teamA : m.result.a > m.result.b);
     const bWin = m.result && (adv ? adv === m.teamB : m.result.b > m.result.a);
     const decided = m.result && !m.live;
+    // Como o classificado avançou (só destaca em prorrogação/pênaltis, onde o placar não deixa óbvio)
+    const koInfo = m.result ? resolveKO(m.result, m.teamA, m.teamB) : null;
+    const advanceTag = koInfo && koInfo.hadPK ? "PÊNALTIS" : koInfo && koInfo.hadET ? "PRORROG." : null;
     return (
       <div style={{ background: C.card, border: `1px solid ${m.live && m.result ? C.red + "66" : isFinal && m.result ? C.gold : C.border}`, borderRadius: 10, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2, minHeight: 12 }}>
@@ -1523,8 +1527,8 @@ function TabChaveamento({ matches }) {
             {m.live && m.result && <span style={{ fontSize: 9, fontWeight: 900, color: C.red, display: "inline-flex", alignItems: "center", gap: 3 }}><span style={{ width: 5, height: 5, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}
           </div>
         </div>
-        <TeamRow name={m.teamA} score={ds ? ds.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} possible={allPossibleTeams(m.id, "a")} />
-        <TeamRow name={m.teamB} score={ds ? ds.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} possible={allPossibleTeams(m.id, "b")} />
+        <TeamRow name={m.teamA} score={ds ? ds.a : null} win={decided && aWin} lose={decided && bWin} live={m.live} possible={allPossibleTeams(m.id, "a")} advanceTag={decided && aWin ? advanceTag : null} />
+        <TeamRow name={m.teamB} score={ds ? ds.b : null} win={decided && bWin} lose={decided && aWin} live={m.live} possible={allPossibleTeams(m.id, "b")} advanceTag={decided && bWin ? advanceTag : null} />
         {h2h && isDefined(m.teamA) && isDefined(m.teamB) && (
           <div style={{ fontSize: 9, color: C.muted, borderTop: `1px solid ${C.border}`, paddingTop: 4, marginTop: 3 }}>
             🔁 Nos grupos: <span style={{ color: C.text, fontWeight: 700 }}>{h2h.result.a}×{h2h.result.b}</span>
