@@ -1970,10 +1970,7 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
   const set = (fields) => onChange(fields);
   const btn = (active) => ({ flex: 1, padding: "8px 6px", borderRadius: 8, border: `1px solid ${active ? C.green : C.border}`, background: active ? `${C.green}1a` : C.surface, color: active ? C.green : C.muted, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", fontFamily: "inherit" });
 
-  if (!isDraw) return null; // só mostra etapas extras se o tempo normal for empate
-
-  // O ramo é inferido da ESTRUTURA salva (sobrevive a recargas do servidor):
-  // etMode pode estar salvo; senão, infere de etA/etB. "mantem" = prorrogação == normal.
+  const na = parseInt(a), nb = parseInt(b);
   const hasETScore = pred.etA != null && pred.etA !== "" && pred.etB != null && pred.etB !== "";
   const sameAsNormal = hasETScore && String(pred.etA) === String(pred.a) && String(pred.etB) === String(pred.b);
   const mode = pred.etMode || (hasETScore ? (sameAsNormal ? "mantem" : "gol") : "");
@@ -1982,26 +1979,36 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
   const etDraw = isGol && hasETScore && parseInt(pred.etA) === parseInt(pred.etB);
   const showPen = isMantem || etDraw;
 
-  // Ao escolher "sai gol", entra no modo gol mas SEM placar ainda — o usuário escolhe quem marca.
-  const onGol = () => set({ etMode: "gol", etA: "", etB: "", pen: "" });
-  const onMantem = () => set({ etMode: "mantem", etA: String(a), etB: String(b) });
+  // Rascunho local do placar da prorrogação: steppers mexem aqui (instantâneo, sem salvar);
+  // só o botão "Confirmar" envia ao servidor. Evita lag ao clicar rápido.
+  const savedEa = hasETScore ? parseInt(pred.etA) : null, savedEb = hasETScore ? parseInt(pred.etB) : null;
+  const savedWho = !hasETScore ? "" : (savedEa > na && savedEb > nb ? "both" : savedEa > na ? "A" : savedEb > nb ? "B" : "");
+  const [draft, setDraft] = useState(null); // { who, ea, eb } enquanto edita; null = sem edição pendente
+  const active = draft || (hasETScore ? { who: savedWho, ea: savedEa, eb: savedEb } : null);
+  // Há mudança não-confirmada?
+  const dirty = draft && (String(draft.ea) !== String(savedEa) || String(draft.eb) !== String(savedEb));
 
-  // Quem marca na prorrogação (inferido do placar da prorrogação vs normal)
-  const na = parseInt(a), nb = parseInt(b);
-  const ea = hasETScore ? parseInt(pred.etA) : null, eb = hasETScore ? parseInt(pred.etB) : null;
-  const aScored = hasETScore && ea > na, bScored = hasETScore && eb > nb;
-  const whoMode = !hasETScore ? "" : (aScored && bScored ? "both" : aScored ? "A" : bScored ? "B" : "");
-  // Define quem marca: começa no mínimo válido (placar normal + 1 pro(s) time(s) que marca(m))
+  if (!isDraw) return null;
+
+  const onGol = () => { setDraft(null); set({ etMode: "gol", etA: "", etB: "", pen: "" }); };
+  const onMantem = () => { setDraft(null); set({ etMode: "mantem", etA: String(a), etB: String(b) }); };
+
+  // Escolhe quem marca → inicia o rascunho no mínimo válido (não salva ainda)
   const pickWho = (who) => {
-    if (who === "A") set({ etMode: "gol", etA: String(na + 1), etB: String(nb), pen: "" });
-    else if (who === "B") set({ etMode: "gol", etA: String(na), etB: String(nb + 1), pen: "" });
-    else set({ etMode: "gol", etA: String(na + 1), etB: String(nb + 1), pen: "" }); // os dois
+    if (who === "A") setDraft({ who, ea: na + 1, eb: nb });
+    else if (who === "B") setDraft({ who, ea: na, eb: nb + 1 });
+    else setDraft({ who: "both", ea: na + 1, eb: nb + 1 });
   };
-  // Steppers: ajusta gols respeitando o mínimo (não pode ficar <= placar normal pra quem marca)
-  const stepA = (d) => { const v = Math.max(whoMode === "B" ? na : na + 1, (ea || na) + d); set({ etMode: "gol", etA: String(v) }); };
-  const stepB = (d) => { const v = Math.max(whoMode === "A" ? nb : nb + 1, (eb || nb) + d); set({ etMode: "gol", etB: String(v) }); };
-  const whoBtn = (active) => ({ flex: 1, padding: "9px 6px", borderRadius: 8, border: `1px solid ${active ? C.green : C.border}`, background: active ? `${C.green}1a` : C.surface, color: active ? C.green : C.muted, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", fontFamily: "inherit" });
-  const stepBtn = { width: 30, height: 30, borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontWeight: 900, fontSize: 16, cursor: disabled ? "default" : "pointer", fontFamily: "inherit", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" };
+  const curWho = draft ? draft.who : savedWho;
+  const curEa = active ? active.ea : na, curEb = active ? active.eb : nb;
+  // Steppers mexem só no rascunho
+  const stepA = (d) => { const base = draft || { who: savedWho, ea: savedEa ?? na, eb: savedEb ?? nb }; const v = Math.max(base.who === "B" ? na : na + 1, base.ea + d); setDraft({ ...base, ea: v }); };
+  const stepB = (d) => { const base = draft || { who: savedWho, ea: savedEa ?? na, eb: savedEb ?? nb }; const v = Math.max(base.who === "A" ? nb : nb + 1, base.eb + d); setDraft({ ...base, eb: v }); };
+  // Confirma: envia o rascunho ao servidor de uma vez
+  const confirmET = () => { if (!draft) return; set({ etMode: "gol", etA: String(draft.ea), etB: String(draft.eb), pen: "" }); setDraft(null); };
+
+  const whoBtn = (act) => ({ flex: 1, padding: "9px 6px", borderRadius: 8, border: `1px solid ${act ? C.green : C.border}`, background: act ? `${C.green}1a` : C.surface, color: act ? C.green : C.muted, fontWeight: 700, fontSize: 12, cursor: disabled ? "default" : "pointer", fontFamily: "inherit" });
+  const stepBtn = { width: 32, height: 32, borderRadius: 7, border: `1px solid ${C.border}`, background: C.surface, color: C.text, fontWeight: 900, fontSize: 18, cursor: disabled ? "default" : "pointer", fontFamily: "inherit", lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center" };
 
   return (
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2016,36 +2023,40 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
           {/* Etapa 1: quem faz o gol na prorrogação? */}
           <div style={{ fontSize: 11, color: C.muted, textAlign: "center" }}>Quem faz o gol na prorrogação?</div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button disabled={disabled} onClick={() => pickWho("A")} style={whoBtn(whoMode === "A")}>{teamFlag(teamA)} {named ? teamA : "Time 1"}</button>
-            <button disabled={disabled} onClick={() => pickWho("both")} style={whoBtn(whoMode === "both")}>Os dois</button>
-            <button disabled={disabled} onClick={() => pickWho("B")} style={whoBtn(whoMode === "B")}>{teamFlag(teamB)} {named ? teamB : "Time 2"}</button>
+            <button disabled={disabled} onClick={() => pickWho("A")} style={whoBtn(curWho === "A")}>{teamFlag(teamA)} {named ? teamA : "Time 1"}</button>
+            <button disabled={disabled} onClick={() => pickWho("both")} style={whoBtn(curWho === "both")}>Os dois</button>
+            <button disabled={disabled} onClick={() => pickWho("B")} style={whoBtn(curWho === "B")}>{teamFlag(teamB)} {named ? teamB : "Time 2"}</button>
           </div>
 
-          {/* Etapa 2: ajusta o placar com steppers (só aparece depois de escolher quem marca) */}
-          {whoMode && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: C.surface, borderRadius: 8, padding: "8px 6px", flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.text, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamA)} {named ? teamA : "T1"}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <button disabled={disabled || whoMode === "B"} onClick={() => stepA(-1)} style={{ ...stepBtn, opacity: whoMode === "B" ? 0.3 : 1 }}>−</button>
-                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, minWidth: 22, textAlign: "center", color: C.green }}>{ea ?? na}</span>
-                <button disabled={disabled || whoMode === "B"} onClick={() => stepA(1)} style={{ ...stepBtn, opacity: whoMode === "B" ? 0.3 : 1 }}>+</button>
+          {/* Etapa 2: ajusta o placar com steppers (rascunho local) + Confirmar */}
+          {curWho && (
+            <>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: C.surface, borderRadius: 8, padding: "8px 6px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.text, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamA)} {named ? teamA : "T1"}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <button disabled={disabled || curWho === "B"} onClick={() => stepA(-1)} style={{ ...stepBtn, opacity: curWho === "B" ? 0.3 : 1 }}>−</button>
+                  <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 26, minWidth: 24, textAlign: "center", color: C.green }}>{curEa}</span>
+                  <button disabled={disabled || curWho === "B"} onClick={() => stepA(1)} style={{ ...stepBtn, opacity: curWho === "B" ? 0.3 : 1 }}>+</button>
+                </div>
+                <span style={{ color: C.muted, fontWeight: 900 }}>×</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <button disabled={disabled || curWho === "A"} onClick={() => stepB(-1)} style={{ ...stepBtn, opacity: curWho === "A" ? 0.3 : 1 }}>−</button>
+                  <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 26, minWidth: 24, textAlign: "center", color: C.green }}>{curEb}</span>
+                  <button disabled={disabled || curWho === "A"} onClick={() => stepB(1)} style={{ ...stepBtn, opacity: curWho === "A" ? 0.3 : 1 }}>+</button>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: C.text, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamB)} {named ? teamB : "T2"}</span>
               </div>
-              <span style={{ color: C.muted, fontWeight: 900 }}>×</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <button disabled={disabled || whoMode === "A"} onClick={() => stepB(-1)} style={{ ...stepBtn, opacity: whoMode === "A" ? 0.3 : 1 }}>−</button>
-                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, minWidth: 22, textAlign: "center", color: C.green }}>{eb ?? nb}</span>
-                <button disabled={disabled || whoMode === "A"} onClick={() => stepB(1)} style={{ ...stepBtn, opacity: whoMode === "A" ? 0.3 : 1 }}>+</button>
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 700, color: C.text, maxWidth: 64, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamB)} {named ? teamB : "T2"}</span>
-            </div>
-          )}
-          {whoMode === "both" && etDraw && (
-            <div style={{ fontSize: 10, color: C.gold, textAlign: "center" }}>Empate na prorrogação → decide nos pênaltis 👇</div>
+              {dirty ? (
+                <button disabled={disabled} onClick={confirmET} style={{ width: "100%", padding: "10px", borderRadius: 8, border: "none", background: C.green, color: "#06090a", fontWeight: 900, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>✓ Confirmar placar {curEa}×{curEb}</button>
+              ) : (
+                <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>{curEa === curEb ? "Empate na prorrogação → decide nos pênaltis 👇" : `Placar confirmado: ${curEa}×${curEb}`}</div>
+              )}
+            </>
           )}
         </div>
       )}
 
-      {showPen && (
+      {showPen && !dirty && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 11, color: C.gold, fontWeight: 700, textAlign: "center" }}>🎯 Quem passa nos pênaltis?</div>
           <div style={{ display: "flex", gap: 6 }}>
