@@ -503,6 +503,45 @@ function buildRankingText(ranked, totalCaixa) {
 }
 
 // Monta o texto dos palpites de TODOS os jogadores nos jogos visíveis (já travados/iniciados).
+// Descreve um palpite de mata-mata em sub-linhas detalhadas (Formato 2).
+// Retorna um array de linhas já formatadas.
+function describeKnockoutPick(pr, m) {
+  const lines = [];
+  const na = parseInt(pr.a), nb = parseInt(pr.b);
+  const isDraw = na === nb;
+  lines.push(`  ⚽ Normal: ${pr.a}×${pr.b}`);
+  if (!isDraw) {
+    // decidido no tempo normal → quem passa é inferido
+    const adv = na > nb ? m.teamA : m.teamB;
+    lines.push(`  ✅ Passa: ${teamFlag(adv)} ${adv}`.trimEnd());
+    return lines;
+  }
+  // empate no normal → prorrogação
+  const hasET = pr.etA != null && pr.etA !== "" && pr.etB != null && pr.etB !== "";
+  if (hasET) {
+    const ea = parseInt(pr.etA), eb = parseInt(pr.etB);
+    const etSame = ea === na && eb === nb;
+    if (etSame) {
+      lines.push(`  ⏱️ Prorrogação: sem gols (${pr.etA}×${pr.etB})`);
+    } else {
+      lines.push(`  ⏱️ Prorrogação: ${pr.etA}×${pr.etB}`);
+    }
+    if (ea !== eb) {
+      const adv = ea > eb ? m.teamA : m.teamB;
+      lines.push(`  ✅ Passa: ${teamFlag(adv)} ${adv}`.trimEnd());
+      return lines;
+    }
+  }
+  // empate na prorrogação (ou mantém) → pênaltis
+  if (pr.pen) {
+    const adv = pr.pen === "A" ? m.teamA : m.teamB;
+    lines.push(`  🎯 Pênaltis: ${teamFlag(adv)} ${adv}`.trimEnd());
+  } else {
+    lines.push(`  🎯 Vai pra pênaltis (não escolheu quem passa)`);
+  }
+  return lines;
+}
+
 function buildRoundPicksText(matches, participants, preds, dayLabel) {
   const single = matches.length === 1;
   const lines = [];
@@ -510,19 +549,26 @@ function buildRoundPicksText(matches, participants, preds, dayLabel) {
   if (dayLabel) lines.push(`_${dayLabel}_`);
   lines.push("");
   matches.forEach((m) => {
+    const isKO = isKnockoutMatch(m);
     const placar = m.result ? (() => { const ds = displayScore(m); return `  (${m.live ? "Parcial" : "Final"}: ${ds.a}×${ds.b}${ds.isET ? (m.result.pen ? " pênaltis" : " prorrog.") : ""})`; })() : "";
     if (!single) lines.push(`*${m.teamA} × ${m.teamB}*${placar}`);
     else if (placar) lines.push(`_${placar.trim()}_`);
     participants.forEach((p) => {
       const pr = preds[p.id]?.[m.id];
       const has = pr && pr.a !== "" && pr.b !== "" && pr.a != null && pr.b != null;
-      if (has) {
-        const pts = m.result ? scoreMatch(pr, m) : null;
-        const tag = pts != null ? `  ➜ ${pts}pts` : "";
+      if (!has) return;
+      const pts = m.result ? scoreMatch(pr, m) : null;
+      const tag = pts != null ? `  ➜ ${pts}pts` : "";
+      if (isKO) {
+        // Mata-mata: detalha cada decisão em sub-linhas
+        lines.push(`*${p.name}*${tag}`);
+        describeKnockoutPick(pr, m).forEach(l => lines.push(l));
+        lines.push("");
+      } else {
         lines.push(`• ${p.name}: ${pr.a}×${pr.b}${tag}`);
       }
     });
-    lines.push("");
+    if (!isKO) lines.push("");
   });
   return lines.join("\n").trim();
 }
