@@ -1964,8 +1964,6 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
   const a = pred.a, b = pred.b;
   const hasScore = a !== "" && a != null && b !== "" && b != null;
   const isDraw = hasScore && parseInt(a) === parseInt(b);
-  const hasET = pred.etA != null && pred.etA !== "" && pred.etB != null && pred.etB !== "";
-  const etDraw = hasET && parseInt(pred.etA) === parseInt(pred.etB);
   const teamDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo|3º/i.test(t);
   const named = teamDefined(teamA) && teamDefined(teamB);
 
@@ -1974,32 +1972,41 @@ function KnockoutInputs({ pred, teamA, teamB, disabled, onChange }) {
 
   if (!isDraw) return null; // só mostra etapas extras se o tempo normal for empate
 
-  // Empate no normal → escolher: mantém placar (vai pênaltis) ou sai gol (placar da prorrogação)
-  const mantem = hasET && pred.etA === pred.a && pred.etB === pred.b;
+  // etMode controla o ramo: "mantem" (vai pênaltis) ou "gol" (placar da prorrogação). 
+  // Se não definido ainda, inferimos do estado salvo (compatível com palpites antigos).
+  const hasETScore = pred.etA != null && pred.etA !== "" && pred.etB != null && pred.etB !== "";
+  const inferredMantem = hasETScore && String(pred.etA) === String(pred.a) && String(pred.etB) === String(pred.b);
+  const mode = pred.etMode || (hasETScore ? (inferredMantem ? "mantem" : "gol") : "");
+  const isMantem = mode === "mantem";
+  const isGol = mode === "gol";
+  const etDraw = isGol && hasETScore && parseInt(pred.etA) === parseInt(pred.etB);
+  const etSameAsNormal = isGol && hasETScore && String(pred.etA) === String(pred.a) && String(pred.etB) === String(pred.b);
+  // Pênaltis aparecem se: mantém, OU saiu gol mas o placar da prorrogação empatou
+  const showPen = isMantem || etDraw;
+
   return (
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${C.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ fontSize: 11, color: C.gold, fontWeight: 700 }}>⏱️ Empatou! E na prorrogação?</div>
       <div style={{ display: "flex", gap: 6 }}>
-        <button disabled={disabled} onClick={() => set({ etA: a, etB: b, pen: pred.pen || "" })} style={btn(mantem)}>Mantém {a}×{b} → pênaltis</button>
-        <button disabled={disabled} onClick={() => set({ etA: "", etB: "", pen: "" })} style={btn(hasET && !mantem)}>Sai gol na prorrogação</button>
+        <button disabled={disabled} onClick={() => set({ etMode: "mantem", etA: a, etB: b })} style={btn(isMantem)}>Mantém {a}×{b} → pênaltis</button>
+        <button disabled={disabled} onClick={() => set({ etMode: "gol", etA: "", etB: "", pen: "" })} style={btn(isGol)}>Sai gol na prorrogação</button>
       </div>
 
-      {hasET && !mantem && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+      {isGol && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 11, color: C.muted }}>Placar final:</span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamA}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamA)} {named ? teamA : "T1"}</span>
           <ScoreIn value={pred.etA ?? ""} onChange={(v) => set({ etA: v })} disabled={disabled} />
           <span style={{ color: C.muted }}>×</span>
           <ScoreIn value={pred.etB ?? ""} onChange={(v) => set({ etB: v })} disabled={disabled} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamB}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.text, maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{teamFlag(teamB)} {named ? teamB : "T2"}</span>
         </div>
       )}
-      {hasET && !mantem && pred.etA === pred.a && pred.etB === pred.b && (
+      {etSameAsNormal && (
         <div style={{ fontSize: 10, color: C.red, textAlign: "center" }}>⚠️ O placar da prorrogação não pode ser igual ao do tempo normal. Mude o placar ou use "Mantém".</div>
       )}
 
-      {/* Pênaltis: só se a prorrogação também for empate (mantém OU placar empatado) */}
-      {((mantem) || (hasET && !mantem && etDraw)) && (
+      {showPen && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 11, color: C.gold, fontWeight: 700, textAlign: "center" }}>🎯 Quem passa nos pênaltis?</div>
           <div style={{ display: "flex", gap: 6 }}>
