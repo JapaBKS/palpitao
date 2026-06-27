@@ -2318,7 +2318,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   const activeUserPaid = participants.find(p => p.id === activePid)?.paid;
   const myRank = (activePid && activeUserPaid) ? fullRanked.filter(p => p.paid).findIndex(p => p.id === activePid) + 1 : 0;
   const hasResults = matches.some(m => m.result);
-  const isUnlocked = sessionUnlocked[activePid];
+  const isUnlocked = sessionUnlocked[activePid] || isAdmin; // admin acessa qualquer perfil p/ correções
   const pendingCount = matches.filter(m => { if (isLocked(m.date)) return false; const p = preds[activePid]?.[m.id]; return !(p && p.a !== "" && p.b !== "" && p.a != null && p.b != null); }).length;
   const todayFiltered = applyFilter(matches, filter);
   const filteredMatches = (filter === "hoje" && todayFiltered.length === 0)
@@ -2339,6 +2339,11 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
         </div>
       ) : (
         <>
+          {isAdmin && !sessionUnlocked[activePid] && (
+            <div style={{ background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, color: C.gold, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+              🔧 Modo admin: você está acessando o perfil de {activeUser?.name} para correções. Jogos já encerrados também ficam editáveis aqui.
+            </div>
+          )}
           {stats && <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}><Avatar participant={activeUser} size={48} />{myRank > 0 && hasResults && <span style={{ background: myRank <= 3 ? `${C.gold}1a` : C.surface, color: myRank <= 3 ? C.gold : C.muted, border: `1px solid ${myRank <= 3 ? C.gold + "44" : C.border}`, borderRadius: 10, padding: "3px 10px", fontSize: 13, fontWeight: 900 }}>{myRank === 1 ? "🥇" : myRank === 2 ? "🥈" : myRank === 3 ? "🥉" : "#"}{myRank <= 3 ? "" : myRank}º lugar</span>}<span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 30, color: C.gold }}>{stats.total}</span><span style={{ color: C.muted, fontSize: 13 }}>pontos</span><span style={{ color: C.gold, fontWeight: 700, fontSize: 13 }}>🎯 {stats.c10}</span><span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>⭐ {stats.c7}</span><span style={{ color: C.blue, fontWeight: 700, fontSize: 13 }}>✅ {stats.c5}</span>{(!activeUser?.paid || pendingCount > 0) && <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>{!activeUser?.paid && <span style={{ background: `${C.red}1a`, color: C.red, border: `1px solid ${C.red}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ Pix pendente</span>}{pendingCount > 0 && <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 10, padding: "3px 10px", fontSize: 12, fontWeight: 700 }}>⚠️ {pendingCount} pendentes de palpite</span>}</div>}</div>}
           <NextMatchHighlight matches={matches} activePid={activePid} preds={preds} />
           {!activeUser?.paid && <PixSection />}
@@ -2352,11 +2357,13 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
               {ms.map((m) => {
                 const pred = preds[activePid]?.[m.id] || {};
                 const pts = m.result ? scoreMatch(pred, m) : null;
-                const locked = isLocked(m.date);
-                const closingSoon = !locked && isClosingSoon(m.date);
+                const timeLocked = isLocked(m.date);
+                const locked = timeLocked && !isAdmin; // admin pode corrigir palpites de jogos já travados
+                const adminEditingLocked = timeLocked && isAdmin;
+                const closingSoon = !locked && !timeLocked && isClosingSoon(m.date);
                 return (
-                  <div key={m.id} className="match-card" style={{ background: C.card, border: `1px solid ${closingSoon ? C.gold + "66" : locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : closingSoon ? C.gold : C.greenDim, fontWeight: 700 }}>{m.date}{locked ? " (Tempo Esgotado)" : closingSoon ? " ⚠️ Fecha em breve!" : ""}</span>}
+                  <div key={m.id} className="match-card" style={{ background: C.card, border: `1px solid ${adminEditingLocked ? C.gold + "66" : closingSoon ? C.gold + "66" : locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : adminEditingLocked ? C.gold : closingSoon ? C.gold : C.greenDim, fontWeight: 700 }}>{m.date}{adminEditingLocked ? " 🔧 (Admin: correção liberada)" : locked ? " (Tempo Esgotado)" : closingSoon ? " ⚠️ Fecha em breve!" : ""}</span>}
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamA}</span>
                       <ScoreIn value={pred.a ?? ""} onChange={(v) => setPred(m.id, "a", v)} disabled={locked} />
