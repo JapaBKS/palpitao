@@ -2541,6 +2541,8 @@ export default function BolaoApp() {
   const buildProtectedPreds = (dbPalpites) => {
     const objPreds = {};
     dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
+    // Guarda o estado REAL do banco (sem proteção), pra comparação confiável no save.
+    dbPredsRef.current = JSON.parse(JSON.stringify(objPreds));
     const now = Date.now();
     const localPreds = stateRef.current.preds || {};
     Object.keys(localEditsRef.current).forEach(key => {
@@ -2551,6 +2553,7 @@ export default function BolaoApp() {
     });
     return objPreds;
   };
+  const dbPredsRef = useRef({});
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
   useEffect(() => { setupPWA(); }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [tab]);
@@ -2680,22 +2683,25 @@ export default function BolaoApp() {
   const spr = async (d) => {
     const toSave = [];
     const toDelete = [];
+    const dbPreds = dbPredsRef.current || {};
     Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => {
       const p = d[participante_id][jogo_id];
       const old = preds[participante_id]?.[jogo_id];
-      // marca qualquer mudança de campo como edição local fresca (protege do polling),
-      // mesmo que o palpite ainda esteja incompleto (ex: prorrogação sendo preenchida).
+      // Compara contra o estado REAL do banco (não o local protegido), pra decidir o que salvar.
+      const dbOld = dbPreds[participante_id]?.[jogo_id];
       const anyChange = !old || String(old.a ?? "") !== String(p.a ?? "") || String(old.b ?? "") !== String(p.b ?? "") || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "") || String(old.etMode ?? "") !== String(p.etMode ?? "");
       if (anyChange) markLocalEdit(participante_id, jogo_id);
       const isEmpty = p.a === "" || p.b === "" || p.a == null || p.b == null;
       if (isEmpty) {
-        // Palpite apagado: se havia algo salvo no banco, marca p/ deletar
-        const wasSaved = old && old.a != null && old.a !== "" && old.b != null && old.b !== "";
+        // Palpite apagado: se havia algo no banco, marca p/ deletar
+        const wasSaved = dbOld && dbOld.a != null && dbOld.a !== "" && dbOld.b != null && dbOld.b !== "";
         if (wasSaved) toDelete.push({ participante_id, jogo_id });
         return;
       }
-      const changed = !old || String(old.a) !== String(p.a) || String(old.b) !== String(p.b) || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "");
-      if (changed) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null });
+      // Salva se difere do que está no BANCO (não do estado local). Isso evita pular o save
+      // quando a proteção local já mostra o palpite mas ele nunca chegou ao servidor.
+      const changedVsDb = !dbOld || String(dbOld.a) !== String(p.a) || String(dbOld.b) !== String(p.b) || String(dbOld.etA ?? "") !== String(p.etA ?? "") || String(dbOld.etB ?? "") !== String(p.etB ?? "") || String(dbOld.pen ?? "") !== String(p.pen ?? "");
+      if (changedVsDb) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null });
     }); });
     setPreds(d);
     // Deleta palpites apagados
@@ -2714,9 +2720,13 @@ export default function BolaoApp() {
       showToast("❌ Palpite NÃO foi salvo! Verifique a conexão e tente de novo.", "error");
       console.error("Erro ao salvar palpite:", error);
     } else {
-      // Confirmado no banco: renova a proteção local por mais um tempo, garantindo que
-      // o próximo refresh/realtime não desfaça antes do dado estar 100% propagado.
-      toSave.forEach(t => markLocalEdit(t.participante_id, t.jogo_id));
+      // Confirmado no banco: atualiza o espelho do banco e renova a proteção local.
+      toSave.forEach(t => {
+        markLocalEdit(t.participante_id, t.jogo_id);
+        if (!dbPredsRef.current[t.participante_id]) dbPredsRef.current[t.participante_id] = {};
+        dbPredsRef.current[t.participante_id][t.jogo_id] = { a: t.palpite_a, b: t.palpite_b, etA: t.palpite_et_a, etB: t.palpite_et_b, pen: t.palpite_pen || "" };
+      });
+      toDelete.forEach(del => { if (dbPredsRef.current[del.participante_id]) delete dbPredsRef.current[del.participante_id][del.jogo_id]; });
     }
   };
 
