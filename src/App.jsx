@@ -2536,6 +2536,21 @@ export default function BolaoApp() {
   // Enquanto "fresca" (< 60s), a edição local não é sobrescrita pelo refreshData.
   const localEditsRef = useRef({});
   const markLocalEdit = (pid, matchId) => { localEditsRef.current[`${pid}:${matchId}`] = Date.now(); };
+  // Converte linhas do banco em objeto de preds, PRESERVANDO edições locais frescas (< 90s).
+  // Usado tanto pelo polling quanto pelo realtime, pra não apagar o que o usuário digita agora.
+  const buildProtectedPreds = (dbPalpites) => {
+    const objPreds = {};
+    dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
+    const now = Date.now();
+    const localPreds = stateRef.current.preds || {};
+    Object.keys(localEditsRef.current).forEach(key => {
+      if (now - localEditsRef.current[key] > 90000) { delete localEditsRef.current[key]; return; }
+      const [pid, matchId] = key.split(":");
+      const localVal = localPreds[pid]?.[matchId];
+      if (localVal) { if (!objPreds[pid]) objPreds[pid] = {}; objPreds[pid][matchId] = localVal; }
+    });
+    return objPreds;
+  };
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
   useEffect(() => { setupPWA(); }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [tab]);
@@ -2553,19 +2568,7 @@ export default function BolaoApp() {
         setMatches(dbJogos.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b, etA: j.result_et_a, etB: j.result_et_b, pen: j.result_pen || "" } : null, live: j.is_live === true })));
       }
       if (dbPalpites) {
-        const objPreds = {};
-        dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
-        // Preserva edições locais "frescas" (< 60s) que ainda podem não ter ido ao banco,
-        // evitando que o polling apague o palpite que o usuário está preenchendo agora.
-        const now = Date.now();
-        const localPreds = stateRef.current.preds || {};
-        Object.keys(localEditsRef.current).forEach(key => {
-          if (now - localEditsRef.current[key] > 60000) { delete localEditsRef.current[key]; return; }
-          const [pid, matchId] = key.split(":");
-          const localVal = localPreds[pid]?.[matchId];
-          if (localVal) { if (!objPreds[pid]) objPreds[pid] = {}; objPreds[pid][matchId] = localVal; }
-        });
-        setPreds(objPreds);
+        setPreds(buildProtectedPreds(dbPalpites));
       }
       setLastSync(new Date());
     } catch (err) { console.error("Erro ao sincronizar com o Supabase:", err); }
@@ -2609,7 +2612,7 @@ export default function BolaoApp() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
         const { data } = await supabase.from('palpites').select('*');
-        if (data) { const objPreds = {}; data.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; }); setPreds(objPreds); }
+        if (data) setPreds(buildProtectedPreds(data));
       })
       .subscribe();
     return () => supabase.removeChannel(channel);
@@ -2707,7 +2710,14 @@ export default function BolaoApp() {
       ({ error } = await supabase.from('palpites').upsert(stripped, { onConflict: 'participante_id, jogo_id' }));
       if (!error) showToast("⚠️ Palpite salvo, mas rode a migração de prorrogação/pênalti", "error");
     }
-    if (error) showToast("❌ Palpite não foi salvo! Verifique a conexão.", "error");
+    if (error) {
+      showToast("❌ Palpite NÃO foi salvo! Verifique a conexão e tente de novo.", "error");
+      console.error("Erro ao salvar palpite:", error);
+    } else {
+      // Confirmado no banco: renova a proteção local por mais um tempo, garantindo que
+      // o próximo refresh/realtime não desfaça antes do dado estar 100% propagado.
+      toSave.forEach(t => markLocalEdit(t.participante_id, t.jogo_id));
+    }
   };
 
   const savePin = async (userId, pin) => { setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x)); await supabase.from('participantes').update({ pin }).eq('id', userId); };
