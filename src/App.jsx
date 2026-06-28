@@ -2710,15 +2710,37 @@ export default function BolaoApp() {
       if (error) showToast("❌ Não foi possível apagar o palpite no servidor.", "error");
     }
     if (toSave.length === 0) return;
-    let { error } = await supabase.from('palpites').upsert(toSave, { onConflict: 'participante_id, jogo_id' });
-    if (error && /palpite_et|palpite_pen/.test(error.message || "")) {
-      const stripped = toSave.map(({ palpite_et_a, palpite_et_b, palpite_pen, ...rest }) => rest);
-      ({ error } = await supabase.from('palpites').upsert(stripped, { onConflict: 'participante_id, jogo_id' }));
-      if (!error) showToast("⚠️ Palpite salvo, mas rode a migração de prorrogação/pênalti", "error");
+
+    // Salva cada palpite de forma resiliente. O upsert com onConflict exige uma constraint
+    // UNIQUE (participante_id, jogo_id) no banco; se ela não existir, o upsert falha.
+    // Por isso usamos uma estratégia manual: tenta UPDATE; se não afetou linha, faz INSERT.
+    const saveOne = async (row) => {
+      const stripET = ({ palpite_et_a, palpite_et_b, palpite_pen, ...rest }) => rest;
+      // 1) tenta UPDATE da linha existente
+      let upd = await supabase.from('palpites').update(row).eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).select();
+      if (upd.error && /palpite_et|palpite_pen/.test(upd.error.message || "")) {
+        upd = await supabase.from('palpites').update(stripET(row)).eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).select();
+      }
+      if (upd.error) return upd.error;
+      if (upd.data && upd.data.length > 0) return null; // atualizou com sucesso
+      // 2) não existia → INSERT
+      let ins = await supabase.from('palpites').insert(row).select();
+      if (ins.error && /palpite_et|palpite_pen/.test(ins.error.message || "")) {
+        ins = await supabase.from('palpites').insert(stripET(row)).select();
+      }
+      return ins.error || null;
+    };
+
+    let firstError = null, migrationWarn = false;
+    for (const row of toSave) {
+      const err = await saveOne(row);
+      if (err) { firstError = firstError || err; }
     }
-    if (error) {
-      showToast("❌ Palpite NÃO foi salvo! Verifique a conexão e tente de novo.", "error");
-      console.error("Erro ao salvar palpite:", error);
+
+    if (firstError) {
+      const msg = firstError.message || JSON.stringify(firstError);
+      showToast(`❌ Palpite NÃO salvo: ${msg.slice(0, 80)}`, "error");
+      console.error("Erro ao salvar palpite:", firstError);
     } else {
       // Confirmado no banco: atualiza o espelho do banco e renova a proteção local.
       toSave.forEach(t => {
