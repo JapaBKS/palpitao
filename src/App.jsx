@@ -2542,8 +2542,6 @@ export default function BolaoApp() {
   const buildProtectedPreds = (dbPalpites) => {
     const objPreds = {};
     dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
-    // Guarda o estado REAL do banco (sem proteção), pra comparação confiável no save.
-    dbPredsRef.current = JSON.parse(JSON.stringify(objPreds));
     const now = Date.now();
     const localPreds = stateRef.current.preds || {};
     Object.keys(localEditsRef.current).forEach(key => {
@@ -2554,7 +2552,6 @@ export default function BolaoApp() {
     });
     return objPreds;
   };
-  const dbPredsRef = useRef({});
   useEffect(() => { document.title = "⚽ Bolão Copa 2026"; }, []);
   useEffect(() => { setupPWA(); }, []);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [tab]);
@@ -2682,74 +2679,49 @@ export default function BolaoApp() {
   }, [ready, isAdmin]);
 
   const spr = async (d) => {
+    setPreds(d);
     const toSave = [];
     const toDelete = [];
-    const dbPreds = dbPredsRef.current || {};
     Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => {
       const p = d[participante_id][jogo_id];
-      const old = preds[participante_id]?.[jogo_id];
-      // Compara contra o estado REAL do banco (não o local protegido), pra decidir o que salvar.
-      const dbOld = dbPreds[participante_id]?.[jogo_id];
-      const anyChange = !old || String(old.a ?? "") !== String(p.a ?? "") || String(old.b ?? "") !== String(p.b ?? "") || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "") || String(old.etMode ?? "") !== String(p.etMode ?? "");
-      if (anyChange) markLocalEdit(participante_id, jogo_id);
+      markLocalEdit(participante_id, jogo_id);
       const isEmpty = p.a === "" || p.b === "" || p.a == null || p.b == null;
       if (isEmpty) {
-        // Palpite apagado: se havia algo no banco, marca p/ deletar
-        const wasSaved = dbOld && dbOld.a != null && dbOld.a !== "" && dbOld.b != null && dbOld.b !== "";
+        const wasSaved = preds[participante_id]?.[jogo_id]?.a != null && preds[participante_id]?.[jogo_id]?.a !== "";
         if (wasSaved) toDelete.push({ participante_id, jogo_id });
         return;
       }
-      // Salva se difere do que está no BANCO (não do estado local). Isso evita pular o save
-      // quando a proteção local já mostra o palpite mas ele nunca chegou ao servidor.
-      const changedVsDb = !dbOld || String(dbOld.a) !== String(p.a) || String(dbOld.b) !== String(p.b) || String(dbOld.etA ?? "") !== String(p.etA ?? "") || String(dbOld.etB ?? "") !== String(p.etB ?? "") || String(dbOld.pen ?? "") !== String(p.pen ?? "");
-      if (changedVsDb) toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null });
+      // Sempre salva palpites completos (save é idempotente — não tentamos adivinhar se "mudou").
+      toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null });
     }); });
-    setPreds(d);
-    // Deleta palpites apagados
+
     for (const del of toDelete) {
-      const { error } = await supabase.from('palpites').delete().eq('participante_id', del.participante_id).eq('jogo_id', del.jogo_id);
-      if (error) showToast("❌ Não foi possível apagar o palpite no servidor.", "error");
+      await supabase.from('palpites').delete().eq('participante_id', del.participante_id).eq('jogo_id', del.jogo_id);
     }
     if (toSave.length === 0) return;
 
-    // Salva cada palpite de forma resiliente. O upsert com onConflict exige uma constraint
-    // UNIQUE (participante_id, jogo_id) no banco; se ela não existir, o upsert falha.
-    // Por isso usamos uma estratégia manual: tenta UPDATE; se não afetou linha, faz INSERT.
+    // Salva via UPDATE→INSERT (não depende de constraint UNIQUE). Degrada se faltam colunas et/pen.
+    const stripET = ({ palpite_et_a, palpite_et_b, palpite_pen, ...rest }) => rest;
     const saveOne = async (row) => {
-      const stripET = ({ palpite_et_a, palpite_et_b, palpite_pen, ...rest }) => rest;
-      // 1) tenta UPDATE da linha existente
       let upd = await supabase.from('palpites').update(row).eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).select();
-      if (upd.error && /palpite_et|palpite_pen/.test(upd.error.message || "")) {
+      if (upd.error && /palpite_et|palpite_pen|column/.test(upd.error.message || "")) {
         upd = await supabase.from('palpites').update(stripET(row)).eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).select();
       }
       if (upd.error) return upd.error;
-      if (upd.data && upd.data.length > 0) return null; // atualizou com sucesso
-      // 2) não existia → INSERT
+      if (upd.data && upd.data.length > 0) return null;
       let ins = await supabase.from('palpites').insert(row).select();
-      if (ins.error && /palpite_et|palpite_pen/.test(ins.error.message || "")) {
+      if (ins.error && /palpite_et|palpite_pen|column/.test(ins.error.message || "")) {
         ins = await supabase.from('palpites').insert(stripET(row)).select();
       }
       return ins.error || null;
     };
 
-    let firstError = null, migrationWarn = false;
-    for (const row of toSave) {
-      const err = await saveOne(row);
-      if (err) { firstError = firstError || err; }
-    }
+    let firstError = null;
+    for (const row of toSave) { const err = await saveOne(row); if (err) firstError = firstError || err; }
 
     if (firstError) {
-      const msg = firstError.message || JSON.stringify(firstError);
-      showToast(`❌ Palpite NÃO salvo: ${msg.slice(0, 80)}`, "error");
+      showToast(`❌ NÃO salvou: ${(firstError.message || JSON.stringify(firstError)).slice(0, 90)}`, "error");
       console.error("Erro ao salvar palpite:", firstError);
-    } else {
-      // Confirmado no banco: atualiza o espelho do banco e renova a proteção local.
-      toSave.forEach(t => {
-        markLocalEdit(t.participante_id, t.jogo_id);
-        if (!dbPredsRef.current[t.participante_id]) dbPredsRef.current[t.participante_id] = {};
-        dbPredsRef.current[t.participante_id][t.jogo_id] = { a: t.palpite_a, b: t.palpite_b, etA: t.palpite_et_a, etB: t.palpite_et_b, pen: t.palpite_pen || "" };
-      });
-      toDelete.forEach(del => { if (dbPredsRef.current[del.participante_id]) delete dbPredsRef.current[del.participante_id][del.jogo_id]; });
     }
   };
 
