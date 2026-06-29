@@ -1989,7 +1989,7 @@ function processKnockout(currentMatches) {
 }
 
 /* ── ABA 5: CONTROLE DE JOGOS E GERADORES AUTOMÁTICOS DA FIFA ── */
-function TabJogos({ matches, onChange, isAdmin, onExport, onDiagnose }) {
+function TabJogos({ matches, onChange, isAdmin, onExport }) {
   const [teamA, setTeamA] = useState(""); const [teamB, setTeamB] = useState(""); const [dateStr, setDateStr] = useState(""); const [phase, setPhase] = useState("Fase de Grupos"); const [editId, setEditId] = useState(null); const [tempR, setTempR] = useState({ a: "", b: "" }); const [filter, setFilter] = useState("todos"); const [saving, setSaving] = useState(false);
 
   const add = () => { if (!teamA.trim() || !teamB.trim()) return; onChange([...matches, { id: uid(), teamA: teamA.trim(), teamB: teamB.trim(), phase, date: dateStr, result: null }]); setTeamA(""); setTeamB(""); setDateStr(""); };
@@ -2126,7 +2126,6 @@ function TabJogos({ matches, onChange, isAdmin, onExport, onDiagnose }) {
             <div style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
               <button onClick={gerarCopaCompleta} style={BTN({ background: C.gold, color: "#000", border: `1px solid ${C.border}`, fontSize: 12, padding: "6px 12px", minHeight: 32 })}>⚡ Gerar Tabela Completa (104 Jogos)</button>
               <button onClick={onExport} style={GHOST_BTN({ fontSize: 12, padding: "6px 12px", minHeight: 32 })}>💾 Backup (JSON)</button>
-              <button onClick={onDiagnose} style={GHOST_BTN({ fontSize: 12, padding: "6px 12px", minHeight: 32 })}>🩺 Testar Salvamento</button>
             </div>
           </div>
           <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>Dica: Nos jogos de mata-mata, ao inserir um placar empatado aparecem as opções de prorrogação e pênaltis (igual ao palpite). Escolha quem marca na prorrogação ou quem passa nos pênaltis — o sistema empurra automaticamente a seleção correta para a próxima fase.</div>
@@ -2529,8 +2528,6 @@ export default function BolaoApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionUnlocked, setSessionUnlocked] = useState({});
   const [toast, setToast] = useState(null);
-  const [debugLog, setDebugLog] = useState([]);
-  const dbg = (msg) => setDebugLog(l => [`${new Date().toLocaleTimeString()} ${msg}`, ...l].slice(0, 15));
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const stateRef = useRef({ matches: [], participants: [], preds: {} });
@@ -2725,11 +2722,9 @@ export default function BolaoApp() {
     }); });
 
     for (const del of toDelete) {
-      dbg(`🗑️ DELETE ${del.participante_id}/${del.jogo_id}`);
       await supabase.from('palpites').delete().eq('participante_id', del.participante_id).eq('jogo_id', del.jogo_id);
     }
     if (toSave.length === 0) return;
-    toSave.forEach(r => dbg(`💾 SAVE ${r.participante_id}/${r.jogo_id} = ${r.palpite_a}x${r.palpite_b}`));
 
     // Salva via UPDATE→INSERT (não depende de constraint UNIQUE). Degrada se faltam colunas et/pen.
     const stripET = ({ palpite_et_a, palpite_et_b, palpite_pen, ...rest }) => rest;
@@ -2773,52 +2768,6 @@ export default function BolaoApp() {
 
   const savePin = async (userId, pin) => { setParticipants(p => p.map(x => x.id === userId ? { ...x, pin } : x)); await supabase.from('participantes').update({ pin }).eq('id', userId); };
   const onPickSpecial = async (pid, field, value) => { const updated = participants.map(p => p.id === pid ? { ...p, [field]: value } : p); setParticipants(updated); const { error } = await supabase.from('participantes').update({ [field]: value }).eq('id', pid); if (error) showToast("❌ Erro ao salvar — rode o SQL de migração no Supabase!", "error"); };
-
-  // Diagnóstico de save: testa escrita/leitura real na tabela palpites e reporta onde falha.
-  const diagnosePalpites = async () => {
-    const log = [];
-    try {
-      const testPid = participants[0]?.id;
-      const testJid = matches[0]?.id;
-      if (!testPid || !testJid) { showToast("❌ Diag: sem participante/jogo para testar", "error"); return; }
-      log.push(`participante=${testPid} jogo=${testJid}`);
-
-      // 1) SELECT (lê schema/permissão)
-      const sel = await supabase.from('palpites').select('*').limit(1);
-      if (sel.error) { log.push(`SELECT falhou: ${sel.error.message}`); console.error("DIAG", log); showToast(`❌ Leitura falhou: ${sel.error.message.slice(0,70)}`, "error"); return; }
-      log.push(`SELECT ok (${sel.data?.length ?? 0} linhas, colunas: ${sel.data?.[0] ? Object.keys(sel.data[0]).join(",") : "—"})`);
-
-      // 2) INSERT/UPDATE de teste (placar 9x9, será apagado depois)
-      const testRow = { participante_id: testPid, jogo_id: testJid, palpite_a: 9, palpite_b: 9 };
-      // primeiro lê o que já existe pra restaurar depois
-      const before = await supabase.from('palpites').select('*').eq('participante_id', testPid).eq('jogo_id', testJid).maybeSingle();
-      const existed = before.data;
-
-      let wrote = await supabase.from('palpites').update(testRow).eq('participante_id', testPid).eq('jogo_id', testJid).select();
-      let how = "UPDATE";
-      if (!wrote.error && (!wrote.data || wrote.data.length === 0)) {
-        wrote = await supabase.from('palpites').insert(testRow).select();
-        how = "INSERT";
-      }
-      if (wrote.error) { log.push(`${how} falhou: ${wrote.error.message}`); console.error("DIAG", log); showToast(`❌ Escrita (${how}) falhou: ${wrote.error.message.slice(0,60)}`, "error"); return; }
-      log.push(`${how} ok`);
-
-      // 3) Relê pra confirmar que persistiu
-      const verify = await supabase.from('palpites').select('palpite_a, palpite_b').eq('participante_id', testPid).eq('jogo_id', testJid).maybeSingle();
-      const persisted = verify.data && verify.data.palpite_a === 9 && verify.data.palpite_b === 9;
-      log.push(`Releitura: ${persisted ? "PERSISTIU ✓" : "NÃO PERSISTIU ✗ (" + JSON.stringify(verify.data) + ")"}`);
-
-      // 4) Restaura o valor original (ou apaga se não existia)
-      if (existed) await supabase.from('palpites').update({ palpite_a: existed.palpite_a, palpite_b: existed.palpite_b }).eq('participante_id', testPid).eq('jogo_id', testJid);
-      else await supabase.from('palpites').delete().eq('participante_id', testPid).eq('jogo_id', testJid);
-
-      console.error("DIAG palpites:", log);
-      showToast(persisted ? "✅ Save OK! Escrita e leitura funcionando. Veja console p/ detalhes." : "❌ Escreveu mas NÃO persistiu — provável RLS/policy. Veja console.", persisted ? "success" : "error");
-    } catch (e) {
-      console.error("DIAG erro:", e, log);
-      showToast(`❌ Diag erro: ${(e.message || e).toString().slice(0,70)}`, "error");
-    }
-  };
 
   const exportBackup = () => {
     try {
@@ -2914,20 +2863,11 @@ export default function BolaoApp() {
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
         {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} onAdminAccess={promptAdmin} onAdminLogout={() => setIsAdmin(false)} />}
-        {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} onExport={exportBackup} onDiagnose={diagnosePalpites} />}
+        {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} onExport={exportBackup} />}
         {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />}
         {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} isAdmin={isAdmin} />}
       </div>
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
-      {isAdmin && debugLog.length > 0 && (
-        <div style={{ position: "fixed", bottom: 8, left: 8, right: 8, maxHeight: 180, overflowY: "auto", background: "#000d", border: `1px solid ${C.gold}66`, borderRadius: 8, padding: 8, zIndex: 9999, fontSize: 10, fontFamily: "monospace", color: "#0f0" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ color: C.gold, fontWeight: 700 }}>🐞 DEBUG (saves/deletes)</span>
-            <button onClick={() => setDebugLog([])} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 10 }}>limpar</button>
-          </div>
-          {debugLog.map((l, i) => <div key={i} style={{ color: l.includes("DELETE") ? "#f66" : l.includes("SAVE") ? "#6f6" : "#999" }}>{l}</div>)}
-        </div>
-      )}
     </div>
   );
 }
