@@ -1457,8 +1457,64 @@ function LiveMatchesPanel({ matches, participants, preds }) {
 }
 
 // Painel do sub-ranking do mata-mata (usado na aba Ranking)
+// Detalhamento dos pontos de uma pessoa em cada jogo do mata-mata
+function KnockoutPlayerDetail({ participant, matches, preds }) {
+  const koMatches = matches.filter(m => isKnockoutMatch(m) && m.result)
+    .sort((a, b) => { const da = parseMatchDate(a.date), db = parseMatchDate(b.date); if (da && db) return da - db; return 0; });
+  const rows = koMatches.map(m => {
+    const pred = preds[participant.id]?.[m.id];
+    const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
+    const pts = hasPred ? scoreMatch(pred, m) : null;
+    const bd = hasPred ? knockoutBreakdown(pred, m) : null;
+    const max = maxPtsForMatch(m);
+    const ds = displayScore(m);
+    return { m, pred, hasPred, pts, bd, max, ds };
+  });
+  return (
+    <div style={{ background: "#0003", padding: "8px 14px 12px 48px", display: "flex", flexDirection: "column", gap: 8 }}>
+      {rows.map(({ m, pred, hasPred, pts, bd, max, ds }) => {
+        const isPerfect = pts != null && pts === max && pts > 0;
+        return (
+          <div key={m.id} style={{ background: C.surface, borderRadius: 8, padding: "8px 10px", border: `1px solid ${isPerfect ? C.gold + "55" : C.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 10, fontWeight: 900, color: C.gold, background: `${C.gold}1a`, borderRadius: 4, padding: "1px 5px" }}>{m.phase.replace(" de Final", "").replace("3º Lugar", "3º L.")}</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.text }}>{teamFlag(m.teamA)} {m.teamA} × {m.teamB} {teamFlag(m.teamB)}</span>
+              <span style={{ fontSize: 11, color: C.muted }}>{ds ? `(${ds.a}×${ds.b}${ds.isET ? (m.result.pen ? " pên" : " pror") : ""})` : ""}</span>
+              <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <PtsBadge pts={pts} maxPts={max} />
+                <span style={{ fontSize: 10, color: C.muted }}>/ {max}</span>
+              </span>
+            </div>
+            {hasPred ? (
+              <>
+                <div style={{ fontSize: 11, color: C.greenDim, marginBottom: 3 }}>Palpite: {shortKnockoutPick(pred, m)}</div>
+                {bd && bd.parts.length > 0 ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, alignItems: "center" }}>
+                    {bd.parts.map((pt, i) => (
+                      <span key={i} style={{ fontSize: 9.5, color: C.greenDim, background: `${C.green}14`, border: `1px solid ${C.green}33`, borderRadius: 4, padding: "1px 5px", fontWeight: 700 }}>{pt.label} +{pt.pts}</span>
+                    ))}
+                    {bd.mult !== 1 && (
+                      <span style={{ fontSize: 9.5, color: C.gold, background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 4, padding: "1px 5px", fontWeight: 900 }}>{bd.subtotal} ⚡×{bd.mult} = {bd.total}</span>
+                    )}
+                    {isPerfect && <span style={{ fontSize: 9.5, color: C.gold, fontWeight: 900 }}>🎯 cravou tudo!</span>}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>Não pontuou neste jogo (máx possível era {max})</div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>Não palpitou este jogo (perdeu até {max} pts)</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function KnockoutRankingPanel({ participants, matches, preds }) {
   const [showAll, setShowAll] = useState(false);
+  const [expanded, setExpanded] = useState(null);
   const koRanked = getKnockoutRanked(participants, matches, preds);
   if (koRanked.length === 0) return null;
   return (
@@ -1466,19 +1522,26 @@ function KnockoutRankingPanel({ participants, matches, preds }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: `${C.gold}12`, borderBottom: `1px solid ${C.gold}33` }}>
         <span style={{ fontSize: 16 }}>⚡</span>
         <span style={{ fontWeight: 900, fontSize: 13, color: C.gold }}>RANKING DO MATA-MATA</span>
-        <span style={{ fontSize: 10, color: C.muted, marginLeft: "auto" }}>só pontos da fase eliminatória</span>
+        <span style={{ fontSize: 10, color: C.muted, marginLeft: "auto" }}>toque num nome p/ ver os pontos jogo a jogo</span>
       </div>
       <div style={{ display: "flex", flexDirection: "column" }}>
         {koRanked.slice(0, showAll ? koRanked.length : 5).map((p, i) => {
           const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+          const isOpen = expanded === p.id;
           return (
-            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: i === 0 ? `${C.gold}0a` : "transparent" }}>
-              <span style={{ width: 24, textAlign: "center", fontSize: medal ? 15 : 12, fontWeight: 900, color: i === 0 ? C.gold : C.muted, flexShrink: 0 }}>{medal || (i + 1)}</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                <div style={{ fontSize: 10, color: C.muted }}>{p.koJogos} {p.koJogos === 1 ? "jogo" : "jogos"}{p.koCravadas > 0 ? ` · ${p.koCravadas} ${p.koCravadas === 1 ? "cravada" : "cravadas"} 🎯` : ""}{p.koMelhorPts > 0 ? ` · melhor: ${p.koMelhorPts}pts` : ""}</div>
+            <div key={p.id} style={{ borderTop: i > 0 ? `1px solid ${C.border}` : "none" }}>
+              <div onClick={() => setExpanded(isOpen ? null : p.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: i === 0 ? `${C.gold}0a` : "transparent", cursor: "pointer" }}>
+                <span style={{ width: 24, textAlign: "center", fontSize: medal ? 15 : 12, fontWeight: 900, color: i === 0 ? C.gold : C.muted, flexShrink: 0 }}>{medal || (i + 1)}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+                    {p.name}
+                    <span style={{ fontSize: 9, color: C.muted, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s", display: "inline-block" }}>▶</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted }}>{p.koJogos} {p.koJogos === 1 ? "jogo" : "jogos"}{p.koCravadas > 0 ? ` · ${p.koCravadas} ${p.koCravadas === 1 ? "cravada" : "cravadas"} 🎯` : ""}{p.koMelhorPts > 0 ? ` · melhor: ${p.koMelhorPts}pts` : ""}</div>
+                </div>
+                <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: i === 0 ? C.gold : C.text, flexShrink: 0, letterSpacing: 1 }}>{p.koTotal}</span>
               </div>
-              <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: i === 0 ? C.gold : C.text, flexShrink: 0, letterSpacing: 1 }}>{p.koTotal}</span>
+              {isOpen && <KnockoutPlayerDetail participant={p} matches={matches} preds={preds} />}
             </div>
           );
         })}
