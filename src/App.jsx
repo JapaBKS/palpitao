@@ -2542,6 +2542,21 @@ export default function BolaoApp() {
   const markLocalEdit = (pid, matchId, value) => { localEditsRef.current[`${pid}|${matchId}`] = { ts: Date.now(), value }; };
   // Converte linhas do banco em objeto de preds, PRESERVANDO edições locais frescas (< 90s).
   // Usado tanto pelo polling quanto pelo realtime, pra não apagar o que o usuário digita agora.
+  // Busca TODAS as linhas de uma tabela, contornando o limite padrão de 1000 do Supabase.
+  const fetchAll = async (table) => {
+    const pageSize = 1000;
+    let from = 0, all = [];
+    while (true) {
+      const { data, error } = await supabase.from(table).select('*').range(from, from + pageSize - 1);
+      if (error) { console.error(`fetchAll ${table} erro:`, error); break; }
+      if (!data || data.length === 0) break;
+      all = all.concat(data);
+      if (data.length < pageSize) break; // última página
+      from += pageSize;
+    }
+    return all;
+  };
+
   const buildProtectedPreds = (dbPalpites) => {
     const objPreds = {};
     dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
@@ -2570,10 +2585,10 @@ export default function BolaoApp() {
   const refreshData = async (showSpinner = false) => {
     if (showSpinner) setSyncing(true);
     try {
-      const [{ data: dbParticipants }, { data: dbJogos }, { data: dbPalpites }] = await Promise.all([
-        supabase.from('participantes').select('*'),
-        supabase.from('jogos').select('*'),
-        supabase.from('palpites').select('*'),
+      const [dbParticipants, dbJogos, dbPalpites] = await Promise.all([
+        fetchAll('participantes'),
+        fetchAll('jogos'),
+        fetchAll('palpites'),
       ]);
       if (dbParticipants) setParticipants(dbParticipants);
       if (dbJogos && dbJogos.length > 0) {
@@ -2613,17 +2628,17 @@ export default function BolaoApp() {
     if (!ready) return;
     const channel = supabase.channel('bolao-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'participantes' }, async () => {
-        const { data } = await supabase.from('participantes').select('*');
+        const data = await fetchAll('participantes');
         if (data) setParticipants(data);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jogos' }, async () => {
-        const { data } = await supabase.from('jogos').select('*');
+        const data = await fetchAll('jogos');
         if (data) {
           setMatches(data.map(j => ({ id: j.id, teamA: j.team_a, teamB: j.team_b, phase: j.phase, date: j.match_date, result: (j.result_a !== null && j.result_b !== null) ? { a: j.result_a, b: j.result_b, etA: j.result_et_a, etB: j.result_et_b, pen: j.result_pen || "" } : null, live: j.is_live === true })));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'palpites' }, async () => {
-        const { data } = await supabase.from('palpites').select('*');
+        const data = await fetchAll('palpites');
         if (data) setPreds(buildProtectedPreds(data));
       })
       .subscribe();
