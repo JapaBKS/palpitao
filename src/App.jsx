@@ -1563,12 +1563,28 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
   const lockedMatches = matches.filter(m => isLocked(m.date) && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(b.date) - parseMatchDate(a.date));
   const currentMatch = lockedMatches.find(m => !m.result) || lockedMatches[0] || null;
   const medals = ["🥇", "🥈", "🥉"];
+  const total = participants.length * 50; // caixa: todos os participantes × R$ 50
+  const prizes = [ { color: C.gold, pct: "60%", val: Math.round(total * 0.6) }, { color: C.silver, pct: "30%", val: Math.round(total * 0.3) }, { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) } ];
   const winner = getChampionWinner(matches);
 
   return (
     <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: isMobile ? 8 : 12, marginBottom: 16 }}>
+        {prizes.map((pr, i) => {
+          const leader = ranked[i];
+          return (
+            <div key={i} style={{ background: C.card, border: `1px solid ${pr.color}44`, borderRadius: 12, padding: isMobile ? "10px 6px" : "14px 10px", textAlign: "center" }}>
+              <div style={{ fontSize: isMobile ? 20 : 26, marginBottom: 2 }}>{medals[i]}</div>
+              {leader && <div style={{ fontSize: isMobile ? 11 : 13, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 2 }}>{leader.name}</div>}
+              <div style={{ fontSize: isMobile ? 9 : 10, color: C.muted }}>{i === 0 ? "1º" : i === 1 ? "2º" : "3º"} Lugar ({pr.pct})</div>
+              <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: isMobile ? 16 : 22, letterSpacing: 1, color: pr.color, marginTop: 2 }}>R$ {pr.val.toLocaleString("pt-BR")}</div>
+            </div>
+          );
+        })}
+      </div>
       <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <span>⚽ {played}/{matches.length} partidas finalizadas</span>
+        <span>💰 Caixa: R$ {total.toLocaleString("pt-BR")}</span>
         {winner && <span style={{ color: C.gold }}>🏆 Vencedor: {winner}</span>}
       </div>
       {participants.length === 0 && <Empty icon="👥" msg="Nenhum participante cadastrado." />}
@@ -1584,7 +1600,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
               📋 Palpites do jogo atual
             </button>
           )}
-          <button onClick={() => shareRanking(ranked, 0)} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <button onClick={() => shareRanking(ranked, total)} className="pill-hover" style={{ background: `${C.green}1a`, border: `1px solid ${C.green}55`, color: C.green, borderRadius: 20, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
             📤 Compartilhar no WhatsApp
           </button>
         </div>
@@ -3053,7 +3069,7 @@ export default function BolaoApp() {
             <button onClick={() => refreshData(true)} title="Atualizar agora" aria-label="Atualizar" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, width: 36, height: 36, cursor: "pointer", color: syncing ? C.green : C.muted, fontSize: 16, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "inherit" }}>
               <span style={{ display: "inline-block", animation: syncing ? "spin 0.8s linear infinite" : "none" }}>↻</span>
             </button>
-            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14, whiteSpace: "nowrap" }}>{isMobile ? `R$ ${(participants.filter(p => p.paid).length * 50).toLocaleString("pt-BR")}` : `Caixa: R$ ${(participants.filter(p => p.paid).length * 50).toLocaleString("pt-BR")}`}</span>
+            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14, whiteSpace: "nowrap" }}>{isMobile ? `R$ ${(participants.length * 50).toLocaleString("pt-BR")}` : `Caixa: R$ ${(participants.length * 50).toLocaleString("pt-BR")}`}</span>
           </div>
         </div>
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
