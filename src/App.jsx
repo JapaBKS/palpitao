@@ -2187,8 +2187,9 @@ function processKnockout(currentMatches) {
   
   // Helpers para puxar Vencedor (W) e Perdedor (L) dinamicamente
   const getM = (id) => nextMatches.find(m => m.id === id);
-  // Quem avança: usa resolveKO pra considerar prorrogação e pênaltis (não só o placar normal)
-  const getW = (id) => { const m = getM(id); if (!m || !m.result) return null; const r = resolveKO(m.result, m.teamA, m.teamB); return r && r.advancer ? r.advancer : (m.result.a >= m.result.b ? m.teamA : m.teamB); };
+  // Quem avança: usa resolveKO (considera prorrogação e pênaltis). Se for empate ainda
+  // não decidido (ex: 0×0 ao vivo, sem prorrog/pênaltis), retorna null — ninguém passa ainda.
+  const getW = (id) => { const m = getM(id); if (!m || !m.result) return null; const r = resolveKO(m.result, m.teamA, m.teamB); return r ? r.advancer : null; };
   const getL = (id) => { const m = getM(id); if (!m || !m.result) return null; const w = getW(id); return w === m.teamA ? m.teamB : m.teamA; };
 
   // 3. Garante que todos os 104 jogos existam na tela
