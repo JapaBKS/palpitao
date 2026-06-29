@@ -96,6 +96,22 @@ function resolveKO(obj, teamA, teamB) {
 }
 
 // Pontuação de um jogo do mata-mata (já multiplicada pela fase)
+// Pontuação MÁXIMA possível de um jogo (cravar tudo), considerando o tipo de resultado real.
+// Grupos: 10. Mata-mata: base 10 + bônus aplicáveis ao resultado, tudo ×multiplicador da fase.
+function maxPtsForMatch(match) {
+  if (!match || !match.result) return null;
+  if (!isKnockoutMatch(match)) return 10; // fase de grupos
+  const R = resolveKO(match.result, match.teamA, match.teamB);
+  if (!R) return 10;
+  let max = 10; // placar exato
+  max += KO_BONUS.classif; // sempre dá pra acertar quem passa
+  max += KO_BONUS.prorrog; // sempre dá pra prever se foi/não foi pra prorrogação
+  if (R.hadET && !R.hadPK) max += KO_BONUS.placarProrrog; // decidiu na prorrogação → dá pra cravar o placar dela
+  if (R.hadPK) max += KO_BONUS.penalti; // foi a pênaltis → dá pra acertar quem passou
+  const mult = PHASE_MULT[match.phase] || 1;
+  return Math.round(max * mult);
+}
+
 function calcPtsKnockout(pred, match) {
   if (!match || !match.result) return null;
   const teamA = match.teamA, teamB = match.teamB;
@@ -707,10 +723,12 @@ function ptsStyle(pts) {
 
 /* ── Sub-components ── */
 function Empty({ icon, msg }) { return <div style={{ textAlign: "center", padding: "60px 0", color: C.muted }}><div style={{ fontSize: 48, marginBottom: 12 }}>{icon}</div><div style={{ fontSize: 15 }}>{msg}</div></div>; }
-function PtsBadge({ pts }) {
+function PtsBadge({ pts, maxPts }) {
   if (pts === null) return <span style={{ width: 38, display: "inline-block" }} />;
-  const s = ptsStyle(pts);
-  return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 38, height: 26, padding: "0 6px", background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderRadius: 6, fontWeight: 900, fontSize: 13 }}>{pts}</span>;
+  // Gabaritou o jogo (cravou tudo) → dourado, igual aos 10 dos grupos
+  const isPerfect = maxPts != null && pts === maxPts && pts > 0;
+  const s = isPerfect ? { color: C.gold, bg: "#241800", border: C.gold } : ptsStyle(pts);
+  return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 38, height: 26, padding: "0 6px", background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderRadius: 6, fontWeight: 900, fontSize: 13, boxShadow: isPerfect ? `0 0 6px ${C.gold}66` : "none" }}>{pts}</span>;
 }
 
 // Multiplicador de fase em texto (ex: "×1.5"); null se for ×1 (fase de grupos ou 32-avos)
@@ -1098,7 +1116,7 @@ function PostGameMural({ match, participants, preds }) {
                   <span style={{ fontSize: isKO ? 10.5 : 13, color: hasPred ? (isKO ? C.greenDim : C.text) : C.border, fontFamily: isKO ? "inherit" : "'Bebas Neue', cursive", letterSpacing: isKO ? 0 : 1, minWidth: isKO ? 0 : 50, textAlign: "center", whiteSpace: "nowrap", fontWeight: isKO ? 700 : 400 }}>
                     {hasPred ? (isKO ? shortKnockoutPick(pred, match) : `${pred.a} × ${pred.b}`) : "—"}
                   </span>
-                  <PtsBadge pts={pts} />
+                  <PtsBadge pts={pts} maxPts={match.result ? maxPtsForMatch(match) : null} />
                 </div>
                 {/* Detalhamento dos pontos do mata-mata (de onde vieram) */}
                 {bd && bd.parts.length > 0 && (
@@ -2454,7 +2472,7 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                       {!locked && (pred.a !== "" && pred.a != null || pred.b !== "" && pred.b != null) && (
                         <button onClick={() => clearPred(m.id)} title="Limpar palpite deste jogo" aria-label="Limpar palpite" style={{ background: "transparent", border: `1px solid ${C.red}55`, color: C.red, borderRadius: 6, width: 28, height: 28, cursor: "pointer", fontSize: 13, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit" }}>✕</button>
                       )}
-                      <PtsBadge pts={pts} />
+                      <PtsBadge pts={pts} maxPts={m.result ? maxPtsForMatch(m) : null} />
                     </div>
                     {isKnockoutMatch(m) && <KnockoutInputs pred={pred} teamA={m.teamA} teamB={m.teamB} disabled={locked} onChange={(fields) => setPredFields(m.id, fields)} />}
                     {(locked || m.result) && <PostGameMural match={m} participants={participants} preds={preds} />}
@@ -2584,7 +2602,7 @@ function TabVisao({ participants, matches, preds, isAdmin }) {
                   const hasPred = pred && pred.a !== "" && pred.b !== "" && pred.a != null && pred.b != null;
                   return (
                     <td key={p.id} style={{ padding: "6px", textAlign: "center", borderBottom: `1px solid ${C.border}44` }}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 11, color: hasPred ? C.text : C.border }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span><PtsBadge pts={pts} /></div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}><span style={{ fontSize: 11, color: hasPred ? C.text : C.border }}>{hasPred ? `${pred.a}×${pred.b}` : "—"}</span><PtsBadge pts={pts} maxPts={m.result ? maxPtsForMatch(m) : null} /></div>
                     </td>
                   );
                 })}
