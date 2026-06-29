@@ -2292,19 +2292,19 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
   const setPred = (matchId, side, val) => {
     if (!activePid) return;
     const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { ...(preds[activePid]?.[matchId] || {}), [side]: val } } };
-    onChange(next); onSaved();
+    onChange(next);
   };
   // Atualiza vários campos do palpite de uma vez (placar, etA, etB, pen)
   const setPredFields = (matchId, fields) => {
     if (!activePid) return;
     const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { ...(preds[activePid]?.[matchId] || {}), ...fields } } };
-    onChange(next); onSaved();
+    onChange(next);
   };
   // Limpa completamente o palpite de um jogo (placar + prorrogação + pênalti) → deleta no servidor
   const clearPred = (matchId) => {
     if (!activePid) return;
     const next = { ...preds, [activePid]: { ...preds[activePid], [matchId]: { a: "", b: "", etA: "", etB: "", pen: "", etMode: "" } } };
-    onChange(next); onSaved();
+    onChange(next);
   };
 
   const handleUnlock = () => {
@@ -2719,12 +2719,14 @@ export default function BolaoApp() {
       return ins.error || null;
     };
 
-    let firstError = null;
-    for (const row of toSave) { const err = await saveOne(row); if (err) firstError = firstError || err; }
+    let firstError = null, savedCount = 0;
+    for (const row of toSave) { const err = await saveOne(row); if (err) firstError = firstError || err; else { savedCount++; markLocalEdit(row.participante_id, row.jogo_id); } }
 
     if (firstError) {
       showToast(`❌ NÃO salvou: ${(firstError.message || JSON.stringify(firstError)).slice(0, 90)}`, "error");
       console.error("Erro ao salvar palpite:", firstError);
+    } else if (savedCount > 0) {
+      showToast("✅ Palpite salvo!", "success");
     }
   };
 
