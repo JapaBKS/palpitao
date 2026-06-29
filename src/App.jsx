@@ -691,9 +691,41 @@ const GHOST_BTN = (extra = {}) => ({ background: "none", border: `1px solid ${C.
 const ptsColor = { 10: C.gold, 7: C.green, 5: C.blue, 2: C.bronze, 0: C.muted };
 const ptsBg   = { 10: "#1a1200", 7: "#001a0d", 5: "#001428", 2: "#1a0a00", 0: "#101a17" };
 
+// Cor/fundo da pontuação por FAIXA — funciona pra grupos (0-10) e mata-mata (até ~52),
+// onde o multiplicador de fase eleva os totais bem acima de 10.
+function ptsStyle(pts) {
+  if (pts == null) return { color: C.muted, bg: ptsBg[0], border: C.border };
+  if (pts === 0) return { color: C.muted, bg: ptsBg[0], border: C.border };
+  if (pts >= 40) return { color: C.gold, bg: "#241800", border: C.gold };       // cravada épica (semi/final)
+  if (pts >= 20) return { color: C.gold, bg: "#1a1200", border: C.gold };       // ótima pontuação mata-mata
+  if (pts >= 11) return { color: C.green, bg: "#002a14", border: C.green };     // boa pontuação mata-mata
+  if (pts === 10) return { color: C.gold, bg: "#1a1200", border: C.gold };      // placar exato (grupos)
+  if (pts >= 7) return { color: C.green, bg: "#001a0d", border: C.green };
+  if (pts >= 5) return { color: C.blue, bg: "#001428", border: C.blue };
+  return { color: C.bronze, bg: "#1a0a00", border: C.bronze };                  // 1-4 pts
+}
+
 /* ── Sub-components ── */
 function Empty({ icon, msg }) { return <div style={{ textAlign: "center", padding: "60px 0", color: C.muted }}><div style={{ fontSize: 48, marginBottom: 12 }}>{icon}</div><div style={{ fontSize: 15 }}>{msg}</div></div>; }
-function PtsBadge({ pts }) { if (pts === null) return <span style={{ width: 34, display: "inline-block" }} />; return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 34, height: 26, background: ptsBg[pts] ?? ptsBg[0], color: ptsColor[pts] ?? C.muted, border: `1px solid ${ptsColor[pts] ?? C.border}`, borderRadius: 6, fontWeight: 900, fontSize: 13 }}>{pts}</span>; }
+function PtsBadge({ pts }) {
+  if (pts === null) return <span style={{ width: 38, display: "inline-block" }} />;
+  const s = ptsStyle(pts);
+  return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 38, height: 26, padding: "0 6px", background: s.bg, color: s.color, border: `1px solid ${s.border}`, borderRadius: 6, fontWeight: 900, fontSize: 13 }}>{pts}</span>;
+}
+
+// Multiplicador de fase em texto (ex: "×1.5"); null se for ×1 (fase de grupos ou 32-avos)
+function phaseMultLabel(phase) {
+  const m = PHASE_MULT[phase];
+  if (!m || m === 1) return null;
+  return `×${m}`;
+}
+
+// Badge do multiplicador de fase — mostra "×2" etc. pra deixar claro o peso do jogo
+function MultBadge({ phase, size = 11 }) {
+  const lbl = phaseMultLabel(phase);
+  if (!lbl) return null;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontSize: size, fontWeight: 900, color: C.gold, background: `${C.gold}1a`, border: `1px solid ${C.gold}55`, borderRadius: 5, padding: "1px 6px" }}>⚡ {lbl} pontos</span>;
+}
 function ScoreIn({ value, onChange, disabled, onKeyDown, autoFocus }) { if (disabled) return <span style={{ width: 52, textAlign: "center", padding: "8px 4px", background: C.surface, borderRadius: 8, border: `1px solid ${C.border}`, color: C.text, fontSize: 14, fontWeight: 700 }}>{value !== "" ? value : "-"}</span>; return <input type="number" inputMode="numeric" min="0" max="99" value={value} onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} autoFocus={autoFocus} style={INP({ width: 52, textAlign: "center", padding: "8px 4px", fontSize: 16 })} />; }
 function Divider({ label }) { return <div style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 17, letterSpacing: 1, color: C.muted, borderBottom: `1px solid ${C.border}`, paddingBottom: 8, marginBottom: 10 }}>{label}</div>; }
 
@@ -1039,6 +1071,12 @@ function PostGameMural({ match, participants, preds }) {
       {open && (
         <div style={{ marginTop: 8 }}>
           <PicksDistribution match={match} participants={participants} preds={preds} />
+          {isKO && phaseMultLabel(match.phase) && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 8, padding: "6px 8px", background: `${C.gold}10`, border: `1px solid ${C.gold}33`, borderRadius: 6 }}>
+              <MultBadge phase={match.phase} size={11} />
+              <span style={{ fontSize: 10, color: C.muted }}>· {match.phase} vale {phaseMultLabel(match.phase)} os pontos</span>
+            </div>
+          )}
           {isKO && match.result && (
             <div style={{ fontSize: 10, color: match.live ? C.red : C.muted, textAlign: "center", marginBottom: 6, fontWeight: 700 }}>
               {match.live ? "🔴 Pontuação PARCIAL (muda conforme o jogo evolui)" : "✓ Pontuação final do confronto"}
@@ -1069,7 +1107,7 @@ function PostGameMural({ match, participants, preds }) {
                       <span key={i} style={{ fontSize: 9.5, color: C.greenDim, background: `${C.green}14`, border: `1px solid ${C.green}33`, borderRadius: 4, padding: "1px 5px", fontWeight: 700 }}>{pt.label} +{pt.pts}</span>
                     ))}
                     {bd.mult !== 1 && (
-                      <span style={{ fontSize: 9.5, color: C.gold, background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 4, padding: "1px 5px", fontWeight: 900 }}>×{bd.mult} ({bd.subtotal}→{bd.total})</span>
+                      <span style={{ fontSize: 9.5, color: C.gold, background: `${C.gold}14`, border: `1px solid ${C.gold}44`, borderRadius: 4, padding: "1px 5px", fontWeight: 900 }}>{bd.subtotal} ⚡×{bd.mult} = {bd.total}</span>
                     )}
                   </div>
                 )}
@@ -1107,16 +1145,46 @@ function ScoringLegend() {
       </button>
       {open && (
         <div style={{ marginTop: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, overflow: "hidden" }}>
-          {RULES.map((r) => (
-            <div key={r.pts} style={{ display: "grid", gridTemplateColumns: "36px 36px 1fr", alignItems: "center", gap: 8, padding: "10px 14px", borderTop: r.pts < 10 ? `1px solid ${C.border}` : "none" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, height: 24, background: ptsBg[r.pts], color: ptsColor[r.pts], border: `1px solid ${ptsColor[r.pts]}`, borderRadius: 6, fontWeight: 900, fontSize: 13 }}>{r.pts}</span>
+          <div style={{ padding: "8px 14px", fontSize: 11, fontWeight: 900, color: C.muted, background: C.surface, letterSpacing: 0.5 }}>FASE DE GRUPOS — placar do jogo</div>
+          {RULES.map((r) => {
+            const st = ptsStyle(r.pts);
+            return (
+            <div key={r.pts} style={{ display: "grid", gridTemplateColumns: "36px 36px 1fr", alignItems: "center", gap: 8, padding: "10px 14px", borderTop: `1px solid ${C.border}` }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, height: 24, background: st.bg, color: st.color, border: `1px solid ${st.border}`, borderRadius: 6, fontWeight: 900, fontSize: 13 }}>{r.pts}</span>
               <span style={{ fontSize: 16, textAlign: "center" }}>{r.icon}</span>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 13, color: ptsColor[r.pts] }}>{r.label}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: st.color }}>{r.label}</div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{r.desc}</div>
+              </div>
+            </div>
+            );
+          })}
+
+          <div style={{ padding: "8px 14px", fontSize: 11, fontWeight: 900, color: C.gold, background: `${C.gold}10`, letterSpacing: 0.5, borderTop: `1px solid ${C.border}` }}>⚡ MATA-MATA — placar + bônus, tudo multiplicado pela fase</div>
+          {[
+            { icon: "⚽", label: "Placar do jogo", desc: "Mesma régua dos grupos (10/7/5/2), sobre o placar que decidiu a vaga" },
+            { icon: "✅", label: "Acertou quem passa", desc: "+5 se previu o time classificado, mesmo errando o placar" },
+            { icon: "⏱️", label: "Previu prorrogação", desc: "+3 se acertou que o jogo foi (ou não foi) pra prorrogação" },
+            { icon: "🎯", label: "Cravou placar da prorrogação", desc: "+5 se acertou o placar exato da prorrogação" },
+            { icon: "🥅", label: "Acertou os pênaltis", desc: "+3 se previu quem passou na disputa de pênaltis" },
+          ].map((r, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "36px 1fr", alignItems: "center", gap: 8, padding: "9px 14px", borderTop: `1px solid ${C.border}` }}>
+              <span style={{ fontSize: 16, textAlign: "center" }}>{r.icon}</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>{r.label}</div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 1 }}>{r.desc}</div>
               </div>
             </div>
           ))}
+          <div style={{ padding: "10px 14px", borderTop: `1px solid ${C.border}`, background: C.surface }}>
+            <div style={{ fontSize: 11, fontWeight: 900, color: C.gold, marginBottom: 6 }}>MULTIPLICADOR POR FASE</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {[["32-avos", "×1"], ["Oitavas", "×1.2"], ["Quartas", "×1.5"], ["Semi", "×1.8"], ["3º Lugar", "×1.5"], ["Final", "×2"]].map(([f, m]) => (
+                <span key={f} style={{ fontSize: 11, fontWeight: 700, color: m === "×1" ? C.muted : C.gold, background: m === "×1" ? C.surface : `${C.gold}14`, border: `1px solid ${m === "×1" ? C.border : C.gold + "44"}`, borderRadius: 5, padding: "3px 8px" }}>{f}: {m}</span>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 8, fontStyle: "italic" }}>Ex.: cravar um 2×1 na Final (placar 10 + classificado 5 + previu normal 3 = 18) vira 18 ×2 = <b style={{ color: C.gold }}>36 pts</b>.</div>
+          </div>
         </div>
       )}
     </div>
@@ -2070,7 +2138,7 @@ function TabJogos({ matches, onChange, isAdmin, onExport }) {
 
   const renderMatchCard = (m) => (
     <div key={m.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "11px 14px", display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-      {m.date && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{isLocked(m.date) ? " (Encerrado)" : ""}</span>{m.live && m.result && <span style={{ fontSize: 10, fontWeight: 900, color: C.red, background: `${C.red}1a`, border: `1px solid ${C.red}55`, borderRadius: 10, padding: "1px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}</div>}
+      {m.date && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ fontSize: 11, color: isLocked(m.date) ? C.red : C.greenDim, fontWeight: 700 }}>{m.date}{isLocked(m.date) ? " (Encerrado)" : ""}</span>{m.live && m.result && <span style={{ fontSize: 10, fontWeight: 900, color: C.red, background: `${C.red}1a`, border: `1px solid ${C.red}55`, borderRadius: 10, padding: "1px 8px", display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, animation: "livePulse 1.2s ease-in-out infinite" }} />AO VIVO</span>}<span style={{ flex: 1 }} /><MultBadge phase={m.phase} /></div>}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         {editId === m.id ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
@@ -2363,7 +2431,10 @@ function TabPalpites({ participants, matches, preds, onChange, savePin, sessionU
                 const closingSoon = !locked && !timeLocked && isClosingSoon(m.date);
                 return (
                   <div key={m.id} className="match-card" style={{ background: C.card, border: `1px solid ${adminEditingLocked ? C.gold + "66" : closingSoon ? C.gold + "66" : locked ? C.border : C.greenDim + "33"}`, borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-                    {m.date && <span style={{ fontSize: 11, color: locked ? C.red : adminEditingLocked ? C.gold : closingSoon ? C.gold : C.greenDim, fontWeight: 700 }}>{m.date}{adminEditingLocked ? " 🔧 (Admin: correção liberada)" : locked ? " (Tempo Esgotado)" : closingSoon ? " ⚠️ Fecha em breve!" : ""}</span>}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      {m.date && <span style={{ fontSize: 11, color: locked ? C.red : adminEditingLocked ? C.gold : closingSoon ? C.gold : C.greenDim, fontWeight: 700 }}>{m.date}{adminEditingLocked ? " 🔧 (Admin: correção liberada)" : locked ? " (Tempo Esgotado)" : closingSoon ? " ⚠️ Fecha em breve!" : ""}</span>}
+                      <MultBadge phase={m.phase} />
+                    </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ flex: 1, fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>{m.teamA}</span>
                       <ScoreIn value={pred.a ?? ""} onChange={(v) => setPred(m.id, "a", v)} disabled={locked} />
