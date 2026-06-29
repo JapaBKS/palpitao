@@ -2720,12 +2720,19 @@ export default function BolaoApp() {
         upd = await supabase.from('palpites').update(stripET(row)).eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).select();
       }
       if (upd.error) return upd.error;
-      if (upd.data && upd.data.length > 0) return null;
+      if (upd.data && upd.data.length > 0) return null; // UPDATE confirmou a linha
+      // não existia → INSERT
       let ins = await supabase.from('palpites').insert(row).select();
       if (ins.error && /palpite_et|palpite_pen|column/.test(ins.error.message || "")) {
         ins = await supabase.from('palpites').insert(stripET(row)).select();
       }
-      return ins.error || null;
+      if (ins.error) return ins.error;
+      // CONFIRMAÇÃO REAL: o INSERT pode "passar" sem inserir (ex: RLS bloqueia em silêncio).
+      // Se não voltou dado do insert, relê do banco pra ter certeza que persistiu.
+      if (ins.data && ins.data.length > 0) return null;
+      const check = await supabase.from('palpites').select('participante_id').eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).maybeSingle();
+      if (check.data) return null; // confirmou no banco
+      return { message: "Escrita bloqueada pelo banco (RLS/policy). O dado não foi gravado." };
     };
 
     let firstError = null, savedCount = 0;
