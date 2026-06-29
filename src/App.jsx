@@ -187,6 +187,27 @@ function scoreMatch(pred, match) {
   return calcPts(pred, match.result);
 }
 
+// Ranking exclusivo do MATA-MATA: soma só os pontos dos jogos da fase eliminatória.
+function getKnockoutRanked(participants, matches, preds) {
+  const koMatches = matches.filter(m => isKnockoutMatch(m) && m.result);
+  return [...participants]
+    .map(p => {
+      let total = 0, jogos = 0, cravadas = 0, melhorJogo = null, melhorPts = -1;
+      for (const m of koMatches) {
+        const pred = preds[p.id]?.[m.id];
+        if (!pred || pred.a === "" || pred.b === "" || pred.a == null || pred.b == null) continue;
+        const pts = scoreMatch(pred, m);
+        if (pts == null) continue;
+        total += pts; jogos++;
+        if (pts === maxPtsForMatch(m) && pts > 0) cravadas++; // gabaritou o jogo
+        if (pts > melhorPts) { melhorPts = pts; melhorJogo = m; }
+      }
+      return { ...p, koTotal: total, koJogos: jogos, koCravadas: cravadas, koMelhorPts: melhorPts < 0 ? 0 : melhorPts, koMelhorJogo: melhorJogo };
+    })
+    .filter(p => p.koJogos > 0)
+    .sort((a, b) => b.koTotal - a.koTotal || b.koCravadas - a.koCravadas || b.koMelhorPts - a.koMelhorPts || a.name.localeCompare(b.name, 'pt-BR'));
+}
+
 function getStats(pid, matches, preds) {
   let total = 0, c10 = 0, c7 = 0, c5 = 0, c2 = 0, c0 = 0;
   for (const m of matches) {
@@ -1598,8 +1619,9 @@ function teamFlag(name) {
   return TEAM_FLAGS[key] || "";
 }
 
-function TabChaveamento({ matches }) {
+function TabChaveamento({ matches, participants = [], preds = {} }) {
   const isMobile = useIsMobile();
+  const [koShowAll, setKoShowAll] = useState(false);
   const columns = ["32-avos de Final", "Oitavas de Final", "Quartas de Final", "Semifinal", "3º Lugar", "Final"];
   const finalM = matches.find(m => m.phase === "Final" && m.result && !m.live);
   const champion = finalM ? (finalM.result.a > finalM.result.b ? finalM.teamA : finalM.result.b > finalM.result.a ? finalM.teamB : null) : null;
@@ -1766,6 +1788,38 @@ function TabChaveamento({ matches }) {
     </div>
   ) : null;
 
+  // Sub-ranking exclusivo do mata-mata
+  const koRanked = getKnockoutRanked(participants, matches, preds);
+  const KnockoutRankingBlock = koRanked.length > 0 ? (
+    <div style={{ marginBottom: 16, background: C.card, border: `1px solid ${C.gold}44`, borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: `${C.gold}12`, borderBottom: `1px solid ${C.gold}33` }}>
+        <span style={{ fontSize: 16 }}>⚡</span>
+        <span style={{ fontWeight: 900, fontSize: 13, color: C.gold }}>RANKING DO MATA-MATA</span>
+        <span style={{ fontSize: 10, color: C.muted, marginLeft: "auto" }}>só pontos da fase eliminatória</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {koRanked.slice(0, koShowAll ? koRanked.length : 5).map((p, i) => {
+          const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+          return (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderTop: i > 0 ? `1px solid ${C.border}` : "none", background: i === 0 ? `${C.gold}0a` : "transparent" }}>
+              <span style={{ width: 24, textAlign: "center", fontSize: medal ? 15 : 12, fontWeight: 900, color: i === 0 ? C.gold : C.muted, flexShrink: 0 }}>{medal || (i + 1)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                <div style={{ fontSize: 10, color: C.muted }}>{p.koJogos} {p.koJogos === 1 ? "jogo" : "jogos"}{p.koCravadas > 0 ? ` · ${p.koCravadas} ${p.koCravadas === 1 ? "cravada" : "cravadas"} 🎯` : ""}{p.koMelhorPts > 0 ? ` · melhor: ${p.koMelhorPts}pts` : ""}</div>
+              </div>
+              <span style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 22, color: i === 0 ? C.gold : C.text, flexShrink: 0, letterSpacing: 1 }}>{p.koTotal}</span>
+            </div>
+          );
+        })}
+      </div>
+      {koRanked.length > 5 && (
+        <button onClick={() => setKoShowAll(s => !s)} style={{ width: "100%", background: "none", border: "none", borderTop: `1px solid ${C.border}`, color: C.muted, fontSize: 11, padding: "8px", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+          {koShowAll ? "▲ Mostrar menos" : `▼ Ver todos (${koRanked.length})`}
+        </button>
+      )}
+    </div>
+  ) : null;
+
   // 📱 MOBILE: deslize entre fases (swipe horizontal) + lista vertical
   if (isMobile) {
     const goPhase = (dir) => { const ni = phaseIdx + dir; if (ni >= 0 && ni < columns.length) setSelPhase(columns[ni]); };
@@ -1778,6 +1832,7 @@ function TabChaveamento({ matches }) {
       <div>
         {ChampionBanner}
         {LiveNote}
+        {KnockoutRankingBlock}
         {/* pílulas de fase */}
         <div style={{ display: "flex", gap: 6, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 8, marginBottom: 4 }}>
           {columns.map(ph => {
@@ -1809,6 +1864,7 @@ function TabChaveamento({ matches }) {
     <div>
       {ChampionBanner}
       {LiveNote}
+      {KnockoutRankingBlock}
       <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
         <div style={{ display: "flex", gap: 0, minWidth: "max-content", padding: "10px 0" }}>
           {columns.map((ph, ci) => {
@@ -2960,7 +3016,7 @@ export default function BolaoApp() {
       <div style={{ maxWidth: 960, margin: "0 auto", padding: isMobile ? "16px 12px" : "20px 16px", paddingLeft: "max(12px, env(safe-area-inset-left))", paddingRight: "max(12px, env(safe-area-inset-right))", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" }}>
         {tab === "placar"        && <TabPlacar participants={participants} matches={matches} preds={preds} prevPositions={prevPositions} />}
         {tab === "tabelas"       && <TabTabelas matches={matches} />}
-        {tab === "chaveamento"   && <TabChaveamento matches={matches} />}
+        {tab === "chaveamento"   && <TabChaveamento matches={matches} participants={participants} preds={preds} />}
         {tab === "participantes" && <TabParticipantes participants={participants} onChange={sp} onDelete={removeP} isAdmin={isAdmin} onAdminAccess={promptAdmin} onAdminLogout={() => setIsAdmin(false)} />}
         {tab === "jogos"         && <TabJogos matches={matches} onChange={sm} isAdmin={isAdmin} onExport={exportBackup} />}
         {tab === "palpites"      && <TabPalpites participants={participants} matches={matches} preds={preds} onChange={spr} savePin={savePin} sessionUnlocked={sessionUnlocked} setSessionUnlocked={setSessionUnlocked} onSaved={showToast} isAdmin={isAdmin} onPickSpecial={onPickSpecial} />}
