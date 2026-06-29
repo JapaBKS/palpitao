@@ -2680,18 +2680,21 @@ export default function BolaoApp() {
 
   const spr = async (d) => {
     setPreds(d);
+    // Detecta APENAS os palpites que mudaram em relação ao estado atual (não re-salva tudo).
     const toSave = [];
     const toDelete = [];
     Object.keys(d).forEach(participante_id => { Object.keys(d[participante_id]).forEach(jogo_id => {
       const p = d[participante_id][jogo_id];
+      const old = preds[participante_id]?.[jogo_id];
+      const changed = !old || String(old.a ?? "") !== String(p.a ?? "") || String(old.b ?? "") !== String(p.b ?? "") || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "");
+      if (!changed) return; // não mexeu nesse palpite → ignora
       markLocalEdit(participante_id, jogo_id);
       const isEmpty = p.a === "" || p.b === "" || p.a == null || p.b == null;
       if (isEmpty) {
-        const wasSaved = preds[participante_id]?.[jogo_id]?.a != null && preds[participante_id]?.[jogo_id]?.a !== "";
+        const wasSaved = old && old.a != null && old.a !== "" && old.b != null && old.b !== "";
         if (wasSaved) toDelete.push({ participante_id, jogo_id });
         return;
       }
-      // Sempre salva palpites completos (save é idempotente — não tentamos adivinhar se "mudou").
       toSave.push({ participante_id, jogo_id, palpite_a: parseInt(p.a), palpite_b: parseInt(p.b), palpite_et_a: p.etA != null && p.etA !== "" ? parseInt(p.etA) : null, palpite_et_b: p.etB != null && p.etB !== "" ? parseInt(p.etB) : null, palpite_pen: p.pen || null });
     }); });
 
