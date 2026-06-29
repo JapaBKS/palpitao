@@ -2536,19 +2536,28 @@ export default function BolaoApp() {
   // Protege palpites em edição: guarda o timestamp da última edição local por (pid:matchId).
   // Enquanto "fresca" (< 60s), a edição local não é sobrescrita pelo refreshData.
   const localEditsRef = useRef({});
-  const markLocalEdit = (pid, matchId) => { localEditsRef.current[`${pid}:${matchId}`] = Date.now(); };
+  // Guarda o VALOR salvo (não só timestamp), pra proteção não depender do stateRef estar atualizado.
+  const markLocalEdit = (pid, matchId, value) => { localEditsRef.current[`${pid}|${matchId}`] = { ts: Date.now(), value }; };
   // Converte linhas do banco em objeto de preds, PRESERVANDO edições locais frescas (< 90s).
   // Usado tanto pelo polling quanto pelo realtime, pra não apagar o que o usuário digita agora.
   const buildProtectedPreds = (dbPalpites) => {
     const objPreds = {};
     dbPalpites.forEach(p => { if (!objPreds[p.participante_id]) objPreds[p.participante_id] = {}; objPreds[p.participante_id][p.jogo_id] = { a: p.palpite_a, b: p.palpite_b, etA: p.palpite_et_a, etB: p.palpite_et_b, pen: p.palpite_pen || "" }; });
     const now = Date.now();
-    const localPreds = stateRef.current.preds || {};
+    // Reinjeta o valor salvo localmente (guardado no próprio markLocalEdit), garantindo que
+    // um realtime/refresh que chegue logo após o save não traga uma versão antiga por cima.
     Object.keys(localEditsRef.current).forEach(key => {
-      if (now - localEditsRef.current[key] > 90000) { delete localEditsRef.current[key]; return; }
-      const [pid, matchId] = key.split(":");
-      const localVal = localPreds[pid]?.[matchId];
-      if (localVal) { if (!objPreds[pid]) objPreds[pid] = {}; objPreds[pid][matchId] = localVal; }
+      const entry = localEditsRef.current[key];
+      if (now - entry.ts > 90000) { delete localEditsRef.current[key]; return; }
+      const sep = key.indexOf("|");
+      const pid = key.slice(0, sep), matchId = key.slice(sep + 1);
+      if (entry.value) {
+        if (!objPreds[pid]) objPreds[pid] = {};
+        objPreds[pid][matchId] = entry.value;
+      } else if (objPreds[pid]) {
+        // valor null = apagado localmente → remove mesmo que o banco ainda traga (lag)
+        delete objPreds[pid][matchId];
+      }
     });
     return objPreds;
   };
@@ -2688,7 +2697,7 @@ export default function BolaoApp() {
       const old = preds[participante_id]?.[jogo_id];
       const changed = !old || String(old.a ?? "") !== String(p.a ?? "") || String(old.b ?? "") !== String(p.b ?? "") || String(old.etA ?? "") !== String(p.etA ?? "") || String(old.etB ?? "") !== String(p.etB ?? "") || String(old.pen ?? "") !== String(p.pen ?? "");
       if (!changed) return; // não mexeu nesse palpite → ignora
-      markLocalEdit(participante_id, jogo_id);
+      markLocalEdit(participante_id, jogo_id, p.a !== "" && p.a != null ? { ...p } : null);
       const isEmpty = p.a === "" || p.b === "" || p.a == null || p.b == null;
       if (isEmpty) {
         const wasSaved = old && old.a != null && old.a !== "" && old.b != null && old.b !== "";
@@ -2720,7 +2729,7 @@ export default function BolaoApp() {
     };
 
     let firstError = null, savedCount = 0;
-    for (const row of toSave) { const err = await saveOne(row); if (err) firstError = firstError || err; else { savedCount++; markLocalEdit(row.participante_id, row.jogo_id); } }
+    for (const row of toSave) { const err = await saveOne(row); if (err) firstError = firstError || err; else { savedCount++; markLocalEdit(row.participante_id, row.jogo_id, { a: row.palpite_a, b: row.palpite_b, etA: row.palpite_et_a, etB: row.palpite_et_b, pen: row.palpite_pen || "" }); } }
 
     if (firstError) {
       showToast(`❌ NÃO salvou: ${(firstError.message || JSON.stringify(firstError)).slice(0, 90)}`, "error");
