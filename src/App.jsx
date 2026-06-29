@@ -1587,6 +1587,16 @@ function TabChaveamento({ matches }) {
   const champion = finalM ? (finalM.result.a > finalM.result.b ? finalM.teamA : finalM.result.b > finalM.result.a ? finalM.teamB : null) : null;
   const isDefined = (t) => t && !/Definir|Vencedor|Perdedor|Grupo|3º/i.test(t);
   const byId = (id) => matches.find(m => m.id === id);
+  // Jogos de uma fase, ordenados por data do jogo (depois por id como desempate estável)
+  const phaseMatches = (ph) => matches.filter(m => m.phase === ph).sort((a, b) => {
+    const da = parseMatchDate(a.date), db = parseMatchDate(b.date);
+    if (da && db) { const diff = da.getTime() - db.getTime(); if (diff !== 0) return diff; }
+    else if (da) return -1;
+    else if (db) return 1;
+    // desempate: número do jogo (m_73, m_74...)
+    const na = parseInt((a.id || "").replace("m_", "")) || 0, nb = parseInt((b.id || "").replace("m_", "")) || 0;
+    return na - nb;
+  });
 
   // Mapa de origem OFICIAL FIFA: qual(is) jogo(s) alimenta(m) cada jogo do mata-mata.
   const ORIGIN_MAP = {
@@ -1744,7 +1754,7 @@ function TabChaveamento({ matches }) {
     let touchStartX = 0;
     const onTouchStart = (e) => { touchStartX = e.touches[0].clientX; };
     const onTouchEnd = (e) => { const dx = e.changedTouches[0].clientX - touchStartX; if (Math.abs(dx) > 60) goPhase(dx < 0 ? 1 : -1); };
-    const ms = matches.filter(m => m.phase === phaseToShow);
+    const ms = phaseMatches(phaseToShow);
     const isFinal = phaseToShow === "Final";
     return (
       <div>
@@ -1784,7 +1794,7 @@ function TabChaveamento({ matches }) {
       <div style={{ overflowX: "auto", paddingBottom: 20, scrollbarWidth: "thin" }}>
         <div style={{ display: "flex", gap: 0, minWidth: "max-content", padding: "10px 0" }}>
           {columns.map((ph, ci) => {
-            const ms = matches.filter(m => m.phase === ph);
+            const ms = phaseMatches(ph);
             const isFinal = ph === "Final";
             const hasConnector = ci > 0 && ph !== "3º Lugar" && columns[ci] !== "3º Lugar";
             return (
