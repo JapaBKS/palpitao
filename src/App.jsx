@@ -1563,7 +1563,7 @@ function TabPlacar({ participants, matches, preds, prevPositions }) {
   const lockedMatches = matches.filter(m => isLocked(m.date) && parseMatchDate(m.date)).sort((a, b) => parseMatchDate(b.date) - parseMatchDate(a.date));
   const currentMatch = lockedMatches.find(m => !m.result) || lockedMatches[0] || null;
   const medals = ["🥇", "🥈", "🥉"];
-  const total = participants.length * 50; // caixa: todos os participantes × R$ 50
+  const total = participants.filter(p => p.paid).length * 50; // caixa: pagantes × R$ 50
   const prizes = [ { color: C.gold, pct: "60%", val: Math.round(total * 0.6) }, { color: C.silver, pct: "30%", val: Math.round(total * 0.3) }, { color: C.bronze, pct: "10%", val: Math.round(total * 0.1) } ];
   const winner = getChampionWinner(matches);
 
@@ -3069,7 +3069,7 @@ export default function BolaoApp() {
             <button onClick={() => refreshData(true)} title="Atualizar agora" aria-label="Atualizar" style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, width: 36, height: 36, cursor: "pointer", color: syncing ? C.green : C.muted, fontSize: 16, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "inherit" }}>
               <span style={{ display: "inline-block", animation: syncing ? "spin 0.8s linear infinite" : "none" }}>↻</span>
             </button>
-            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14, whiteSpace: "nowrap" }}>{isMobile ? `R$ ${(participants.length * 50).toLocaleString("pt-BR")}` : `Caixa: R$ ${(participants.length * 50).toLocaleString("pt-BR")}`}</span>
+            <span style={{ background: `${C.gold}1a`, color: C.gold, border: `1px solid ${C.gold}44`, borderRadius: 20, padding: "4px 12px", fontWeight: 700, fontSize: isMobile ? 12 : 14, whiteSpace: "nowrap" }}>{isMobile ? `R$ ${(participants.filter(p => p.paid).length * 50).toLocaleString("pt-BR")}` : `Caixa: R$ ${(participants.filter(p => p.paid).length * 50).toLocaleString("pt-BR")}`}</span>
           </div>
         </div>
         <div style={{ display: "flex", background: C.surface, overflowX: "auto", scrollbarWidth: "none", paddingLeft: "env(safe-area-inset-left)", paddingRight: "env(safe-area-inset-right)" }}>
