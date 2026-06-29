@@ -2529,6 +2529,8 @@ export default function BolaoApp() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionUnlocked, setSessionUnlocked] = useState({});
   const [toast, setToast] = useState(null);
+  const [debugLog, setDebugLog] = useState([]);
+  const dbg = (msg) => setDebugLog(l => [`${new Date().toLocaleTimeString()} ${msg}`, ...l].slice(0, 15));
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState(null);
   const stateRef = useRef({ matches: [], participants: [], preds: {} });
@@ -2708,9 +2710,11 @@ export default function BolaoApp() {
     }); });
 
     for (const del of toDelete) {
+      dbg(`🗑️ DELETE ${del.participante_id}/${del.jogo_id}`);
       await supabase.from('palpites').delete().eq('participante_id', del.participante_id).eq('jogo_id', del.jogo_id);
     }
     if (toSave.length === 0) return;
+    toSave.forEach(r => dbg(`💾 SAVE ${r.participante_id}/${r.jogo_id} = ${r.palpite_a}x${r.palpite_b}`));
 
     // Salva via UPDATE→INSERT (não depende de constraint UNIQUE). Degrada se faltam colunas et/pen.
     const stripET = ({ palpite_et_a, palpite_et_b, palpite_pen, ...rest }) => rest;
@@ -2719,20 +2723,26 @@ export default function BolaoApp() {
       if (upd.error && /palpite_et|palpite_pen|column/.test(upd.error.message || "")) {
         upd = await supabase.from('palpites').update(stripET(row)).eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).select();
       }
-      if (upd.error) return upd.error;
+      if (upd.error) { console.error("UPDATE erro:", upd.error); return upd.error; }
       if (upd.data && upd.data.length > 0) return null; // UPDATE confirmou a linha
       // não existia → INSERT
       let ins = await supabase.from('palpites').insert(row).select();
       if (ins.error && /palpite_et|palpite_pen|column/.test(ins.error.message || "")) {
         ins = await supabase.from('palpites').insert(stripET(row)).select();
       }
-      if (ins.error) return ins.error;
-      // CONFIRMAÇÃO REAL: o INSERT pode "passar" sem inserir (ex: RLS bloqueia em silêncio).
-      // Se não voltou dado do insert, relê do banco pra ter certeza que persistiu.
+      if (ins.error) {
+        console.error("INSERT erro completo:", JSON.stringify(ins.error), "row:", JSON.stringify(row));
+        // FK: participante não existe no banco → mensagem específica
+        if (/foreign key|violates|participante/i.test(ins.error.message || "") || ins.error.code === "23503") {
+          return { message: `Participante não está salvo no banco (ID ${row.participante_id}). Salve o participante antes.` };
+        }
+        return ins.error;
+      }
+      // Confirma relendo do banco
       if (ins.data && ins.data.length > 0) return null;
       const check = await supabase.from('palpites').select('participante_id').eq('participante_id', row.participante_id).eq('jogo_id', row.jogo_id).maybeSingle();
-      if (check.data) return null; // confirmou no banco
-      return { message: "Escrita bloqueada pelo banco (RLS/policy). O dado não foi gravado." };
+      if (check.data) return null;
+      return { message: `Escrita não persistiu (ID ${row.participante_id}). Verifique se o participante existe no banco.` };
     };
 
     let firstError = null, savedCount = 0;
@@ -2894,6 +2904,15 @@ export default function BolaoApp() {
         {tab === "visao"         && <TabVisao participants={participants} matches={matches} preds={preds} isAdmin={isAdmin} />}
       </div>
       {toast && <Toast message={toast.message} type={toast.type} onDone={() => setToast(null)} />}
+      {isAdmin && debugLog.length > 0 && (
+        <div style={{ position: "fixed", bottom: 8, left: 8, right: 8, maxHeight: 180, overflowY: "auto", background: "#000d", border: `1px solid ${C.gold}66`, borderRadius: 8, padding: 8, zIndex: 9999, fontSize: 10, fontFamily: "monospace", color: "#0f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ color: C.gold, fontWeight: 700 }}>🐞 DEBUG (saves/deletes)</span>
+            <button onClick={() => setDebugLog([])} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", fontSize: 10 }}>limpar</button>
+          </div>
+          {debugLog.map((l, i) => <div key={i} style={{ color: l.includes("DELETE") ? "#f66" : l.includes("SAVE") ? "#6f6" : "#999" }}>{l}</div>)}
+        </div>
+      )}
     </div>
   );
 }
